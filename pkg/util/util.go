@@ -49,6 +49,7 @@ func HandleCrash() {
 }
 
 // Forever loops forever running f every d.  Catches any panics, and keeps going.
+// 间隔period时长运行一次f函数
 func Forever(f func(), period time.Duration) {
 	for {
 		func() {

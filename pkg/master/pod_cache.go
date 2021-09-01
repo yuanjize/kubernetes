@@ -30,10 +30,10 @@ import (
 // PodCache contains both a cache of container information, as well as the mechanism for keeping
 // that cache up to date.
 type PodCache struct {
-	containerInfo client.PodInfoGetter
-	pods          pod.Registry
+	containerInfo client.PodInfoGetter  //一个http api用来获取podinfo
+	pods          pod.Registry  // 用来获取pods的api接口
 	// This is a map of pod id to a map of container name to the
-	podInfo map[string]api.PodInfo
+	podInfo map[string]api.PodInfo  // pod缓存
 	podLock sync.Mutex
 }
 
@@ -45,7 +45,7 @@ func NewPodCache(info client.PodInfoGetter, pods pod.Registry) *PodCache {
 		podInfo:       map[string]api.PodInfo{},
 	}
 }
-
+// 通过Cache获取PodInfo
 // GetPodInfo implements the PodInfoGetter.GetPodInfo.
 // The returned value should be treated as read-only.
 // TODO: Remove the host from this call, it's totally unnecessary.
@@ -58,7 +58,7 @@ func (p *PodCache) GetPodInfo(host, podID string) (api.PodInfo, error) {
 	}
 	return value, nil
 }
-
+// 用HTTP API取得Pod 放到cache中
 func (p *PodCache) updatePodInfo(host, id string) error {
 	info, err := p.containerInfo.GetPodInfo(host, id)
 	if err != nil {
@@ -69,7 +69,7 @@ func (p *PodCache) updatePodInfo(host, id string) error {
 	p.podInfo[id] = info
 	return nil
 }
-
+// 从ETCD中取得所有的pod的host和ip，然后用http api取得PodInfo
 // UpdateAllContainers updates information about all containers.  Either called by Loop() below, or one-off.
 func (p *PodCache) UpdateAllContainers() {
 	pods, err := p.pods.ListPods(labels.Everything())

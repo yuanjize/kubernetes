@@ -1,0 +1,9 @@
+
+Minion目前来看就是机器/node
+
+client是一些http api，拿起来使用来访问具体的pod节点的。
+
+目前来看所有的 Registry 接口都是ETCD接口
+NewREST 函数创建的都是用来为master作为server用的处理函数
+
+PodCache就是在内存里缓存了PodInfo定时会从etcd拿到所有的pod地址，然后使用http api请求这些pod然后去更新内存cache

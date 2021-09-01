@@ -48,9 +48,13 @@ type Config struct {
 	Minions            []string
 	MinionCacheTTL     time.Duration
 	MinionRegexp       string
-	PodInfoGetter      client.PodInfoGetter
+	PodInfoGetter      client.PodInfoGetter  // http api,用来访问具体的pod节点
 }
-
+/*
+Registry都是Etcd接口，用来访问ETCD的
+storage是apiserver对外提供的服务
+client 是用来访问节点的API
+*/
 // Master contains state for a Kubernetes cluster master/api server.
 type Master struct {
 	podRegistry        pod.Registry
@@ -59,22 +63,23 @@ type Master struct {
 	endpointRegistry   endpoint.Registry
 	minionRegistry     minion.Registry
 	bindingRegistry    binding.Registry
-	storage            map[string]apiserver.RESTStorage
+	storage            map[string]apiserver.RESTStorage // 一些本服务监听的http接口
 	client             *client.Client
 }
 
-// New returns a new instance of Master connected to the given etcdServer.
+// New returns a new instance of Master connected to the given etcdServer. 初始了一些访问etcd的api
 func New(c *Config) *Master {
 	etcdClient := goetcd.NewClient(c.EtcdServers)
-	minionRegistry := makeMinionRegistry(c)
+	minionRegistry := makeMinionRegistry(c)  //初始化节点仓库
+	//这里其实就是初始化一些etcdAPI,podRegistry其实就是一些对特定数据api进行封装
 	m := &Master{
 		podRegistry:        etcd.NewRegistry(etcdClient),
 		controllerRegistry: etcd.NewRegistry(etcdClient),
 		serviceRegistry:    etcd.NewRegistry(etcdClient),
 		endpointRegistry:   etcd.NewRegistry(etcdClient),
 		bindingRegistry:    etcd.NewRegistry(etcdClient),
-		minionRegistry:     minionRegistry,
-		client:             c.Client,
+		minionRegistry:     minionRegistry,  // 访问节点用
+		client:             c.Client,        // 一些http api，看起来是可以直接访问资源实体，例如直接访问Pod节点
 	}
 	m.init(c.Cloud, c.PodInfoGetter)
 	return m
@@ -108,10 +113,10 @@ func makeMinionRegistry(c *Config) minion.Registry {
 
 func (m *Master) init(cloud cloudprovider.Interface, podInfoGetter client.PodInfoGetter) {
 	podCache := NewPodCache(podInfoGetter, m.podRegistry)
-	go util.Forever(func() { podCache.UpdateAllContainers() }, time.Second*30)
+	go util.Forever(func() { podCache.UpdateAllContainers() }, time.Second*30)  // 定时更新所有的pod信息到pod cache
 
 	endpoints := servicecontroller.NewEndpointController(m.serviceRegistry, m.client)
-	go util.Forever(func() { endpoints.SyncServiceEndpoints() }, time.Second*10)
+	go util.Forever(func() { endpoints.SyncServiceEndpoints() }, time.Second*10)  //定时更新服务对应的 endpoints到etcd
 
 	m.storage = map[string]apiserver.RESTStorage{
 		"pods": pod.NewREST(&pod.RESTConfig{

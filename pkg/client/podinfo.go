@@ -27,6 +27,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
 )
+/*一个HTTP接口，用来获取podInfo用*/
 
 // ErrPodInfoNotAvailable may be returned when the requested pod info is not available.
 var ErrPodInfoNotAvailable = errors.New("no pod info available")

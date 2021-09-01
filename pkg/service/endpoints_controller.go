@@ -43,7 +43,10 @@ func NewEndpointController(serviceRegistry service.Registry, client *client.Clie
 		client:          client,
 	}
 }
-
+// 1.从http api获取所有服务
+// 2.从服务获取所有的pod
+// 3.把所有pod的地址放到集合中作为endpoints
+// 4.更新etcd中每个服务的endpoints集合，（其实就是服务对应的pod的地址集合）
 // SyncServiceEndpoints syncs service endpoints.
 func (e *EndpointController) SyncServiceEndpoints() error {
 	services, err := e.client.ListServices(labels.Everything())
@@ -52,7 +55,7 @@ func (e *EndpointController) SyncServiceEndpoints() error {
 		return err
 	}
 	var resultErr error
-	for _, service := range services.Items {
+	for _, service := range services.Items {  //找到该服务对应的所有的 pods
 		pods, err := e.client.ListPods(labels.Set(service.Selector).AsSelector())
 		if err != nil {
 			glog.Errorf("Error syncing service: %#v, skipping.", service)
@@ -86,6 +89,7 @@ func (e *EndpointController) SyncServiceEndpoints() error {
 }
 
 // findPort locates the container port for the given manifest and portName.
+// 如果portName没有配置，那么就用manifest配置的端口
 func findPort(manifest *api.ContainerManifest, portName util.IntOrString) (int, error) {
 	if ((portName.Kind == util.IntstrString && len(portName.StrVal) == 0) ||
 		(portName.Kind == util.IntstrInt && portName.IntVal == 0)) &&
