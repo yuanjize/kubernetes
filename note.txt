@@ -7,3 +7,5 @@ client是一些http api，拿起来使用来访问具体的pod节点的。
 NewREST 函数创建的都是用来为master作为server用的处理函数
 
 PodCache就是在内存里缓存了PodInfo定时会从etcd拿到所有的pod地址，然后使用http api请求这些pod然后去更新内存cache
+
+RESTStorage的实现都在/xxx/rest.go文件里，是apiserver给外部提供的api借口

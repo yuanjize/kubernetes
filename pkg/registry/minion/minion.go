@@ -25,7 +25,7 @@ import (
 )
 
 var ErrDoesNotExist = fmt.Errorf("The requested resource does not exist.")
-
+// 这个没有操作etcd，只是在内存里的一个set进行操作，health实现是每次list的时候只会返回通过健康检查的节点，cache实现是定时掉用health，不会每次list都掉用health
 // Registry keeps track of a set of minions. Safe for concurrent reading/writing.
 type Registry interface {
 	List() (currentMinions []string, err error)

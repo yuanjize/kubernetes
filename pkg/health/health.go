@@ -25,7 +25,7 @@ import (
 
 // Status represents the result of a single health-check operation.
 type Status int
-
+// 健康状况
 // Status values must be one of these constants.
 const (
 	Healthy Status = iota
@@ -41,7 +41,7 @@ type HealthChecker interface {
 // protects checkers
 var checkerLock = sync.Mutex{}
 var checkers = map[string]HealthChecker{}
-
+// 一个探针集合，探针有多种方式，比如 exe，http等
 // AddHealthChecker adds a health checker to the list of known HealthChecker objects.
 // Any subsequent call to NewHealthChecker will know about this HealthChecker.
 // Panics if 'key' is already present.

@@ -26,8 +26,8 @@ import (
 )
 
 type HealthyRegistry struct {
-	delegate Registry
-	client   health.HTTPGetInterface
+	delegate Registry  // minion代码里的，就是一个set，对它进行各种内存操作
+	client   health.HTTPGetInterface  // 一个http client
 	port     int
 }
 
@@ -38,7 +38,7 @@ func NewHealthyRegistry(delegate Registry, client *http.Client) Registry {
 		port:     10250,
 	}
 }
-
+// 首先判断当前内存里是藕粉存在该节点，然后curl该节点确认该节点是否健康
 func (r *HealthyRegistry) Contains(minion string) (bool, error) {
 	contains, err := r.delegate.Contains(minion)
 	if err != nil {
@@ -56,15 +56,15 @@ func (r *HealthyRegistry) Contains(minion string) (bool, error) {
 	}
 	return true, nil
 }
-
+// 从内存删除该节点
 func (r *HealthyRegistry) Delete(minion string) error {
 	return r.delegate.Delete(minion)
 }
-
+// 插入节点到内存
 func (r *HealthyRegistry) Insert(minion string) error {
 	return r.delegate.Insert(minion)
 }
-
+// 从内存中取出所有节点，挨个检查健康情况，然后把健康的返回
 func (r *HealthyRegistry) List() (currentMinions []string, err error) {
 	var result []string
 	list, err := r.delegate.List()
@@ -85,7 +85,7 @@ func (r *HealthyRegistry) List() (currentMinions []string, err error) {
 	}
 	return result, nil
 }
-
+// 直接访问物理机/虚拟机
 func (r *HealthyRegistry) makeMinionURL(minion string) string {
 	return fmt.Sprintf("http://%s:%d/healthz", minion, r.port)
 }
