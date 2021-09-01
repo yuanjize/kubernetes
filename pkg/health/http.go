@@ -25,7 +25,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	"github.com/golang/glog"
 )
-// 这个就认为是http.client就行
+
 // HTTPGetInterface is an abstract interface for testability. It abstracts the interface of http.Client.Get.
 // This is exported because some other packages may want to do direct HTTP checks.
 type HTTPGetInterface interface {
@@ -36,7 +36,7 @@ type HTTPGetInterface interface {
 type HTTPHealthChecker struct {
 	client HTTPGetInterface
 }
-// 这个是给kubelet用的
+
 func NewHTTPHealthChecker(client *http.Client) HealthChecker {
 	return &HTTPHealthChecker{client: &http.Client{}}
 }
@@ -78,7 +78,7 @@ func getURLParts(currentState api.PodState, container api.Container) (string, in
 func formatURL(host string, port int, path string) string {
 	return fmt.Sprintf("http://%s:%d%s", host, port, path)
 }
-// 向node发请求，根据状态吗判断节点是否健康，client就是一个http.Client
+
 // DoHTTPCheck checks if a GET request to the url succeeds.
 // If the HTTP response code is successful (i.e. 400 > code >= 200), it returns Healthy.
 // If the HTTP response code is unsuccessful, it returns Unhealthy.
@@ -96,7 +96,7 @@ func DoHTTPCheck(url string, client HTTPGetInterface) (Status, error) {
 	glog.V(1).Infof("Health check failed for %s, Response: %v", url, *res)
 	return Unhealthy, nil
 }
-// 看起来就是用探针检查pod是否健康
+
 // HealthCheck checks if the container is healthy by trying sending HTTP Get requests to the container.
 func (h *HTTPHealthChecker) HealthCheck(podFullName string, currentState api.PodState, container api.Container) (Status, error) {
 	host, port, path, err := getURLParts(currentState, container)

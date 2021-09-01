@@ -45,7 +45,7 @@ type Config struct {
 	Cloud              cloudprovider.Interface
 	EtcdServers        []string
 	HealthCheckMinions bool
-	Minions            []string   //所有的node
+	Minions            []string
 	MinionCacheTTL     time.Duration
 	MinionRegexp       string
 	PodInfoGetter      client.PodInfoGetter  // http api,用来访问具体的pod节点
@@ -78,13 +78,13 @@ func New(c *Config) *Master {
 		serviceRegistry:    etcd.NewRegistry(etcdClient),
 		endpointRegistry:   etcd.NewRegistry(etcdClient),
 		bindingRegistry:    etcd.NewRegistry(etcdClient),
-		minionRegistry:     minionRegistry,  // 访问节点用,这些信息基本都在内存里，没有用etcd
+		minionRegistry:     minionRegistry,  // 访问节点用
 		client:             c.Client,        // 一些http api，看起来是可以直接访问资源实体，例如直接访问Pod节点
 	}
 	m.init(c.Cloud, c.PodInfoGetter)
 	return m
 }
-// 用来获取node list的，只看第一个实现，起的实现不用管
+
 func makeMinionRegistry(c *Config) minion.Registry {
 	var minionRegistry minion.Registry
 	if c.Cloud != nil && len(c.MinionRegexp) > 0 {
@@ -98,7 +98,7 @@ func makeMinionRegistry(c *Config) minion.Registry {
 		minionRegistry = minion.NewRegistry(c.Minions)
 	}
 	if c.HealthCheckMinions {
-		minionRegistry = minion.NewHealthyRegistry(minionRegistry, &http.Client{})  // 可以认为是一个wrapper，获取机器信息的时候会进行健康检查过滤掉不健康的
+		minionRegistry = minion.NewHealthyRegistry(minionRegistry, &http.Client{})
 	}
 	if c.MinionCacheTTL > 0 {
 		cachingMinionRegistry, err := minion.NewCachingRegistry(minionRegistry, c.MinionCacheTTL)

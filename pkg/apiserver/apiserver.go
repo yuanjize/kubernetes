@@ -111,7 +111,7 @@ func InstallSupport(mux mux) {
 	mux.HandleFunc("/version", handleVersion)
 	mux.HandleFunc("/", handleIndex)
 }
-// panic到时候写日志
+
 // RecoverPanics wraps an http Handler to recover and log panics.
 func RecoverPanics(handler http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -187,7 +187,7 @@ func readBody(req *http.Request) ([]byte, error) {
 	defer req.Body.Close()
 	return ioutil.ReadAll(req.Body)
 }
-// Path是由${storage_key}[/${object_name}]组成的，所以spilit之后，0就是storage_key，1是object_name storage_key是RESTStorage对象
+
 // splitPath returns the segments for a URL path.
 func splitPath(path string) []string {
 	path = strings.Trim(path, "/")

@@ -31,12 +31,12 @@ type SystemClock struct{}
 func (SystemClock) Now() time.Time {
 	return time.Now()
 }
-//玩意和healthRegistry相比是不会每次list都进行健康检查
+
 type CachingRegistry struct {
 	delegate   Registry
 	ttl        time.Duration
 	minions    []string
-	lastUpdate int64  //上次刷新时间
+	lastUpdate int64
 	lock       sync.RWMutex
 	clock      Clock
 }
@@ -94,13 +94,13 @@ func (r *CachingRegistry) List() ([]string, error) {
 	}
 	return r.minions, nil
 }
-// 是否到了过期时间
+
 func (r *CachingRegistry) expired() bool {
 	var unix int64
 	atomic.SwapInt64(&unix, r.lastUpdate)
 	return r.clock.Now().Sub(time.Unix(r.lastUpdate, 0)) > r.ttl
 }
-// 更新一下目前内存中的节点列表
+
 // refresh updates the current store.  It double checks expired under lock with the assumption
 // of optimistic concurrency with the other functions.
 func (r *CachingRegistry) refresh(force bool) error {
