@@ -25,7 +25,9 @@ import (
 // the input has been validated. Pass one of these to MakeAsync to create an
 // appropriate return value for the Update, Delete, and Create methods.
 type WorkFunc func() (result runtime.Object, err error)
-
+/*
+异步执行函数WorkFunc，并返回一个chan，执行的结果会写入chan
+*/
 // MakeAsync takes a function and executes it, delivering the result in the way required
 // by RESTStorage's Update, Delete, and Create methods.
 func MakeAsync(fn WorkFunc) <-chan runtime.Object {

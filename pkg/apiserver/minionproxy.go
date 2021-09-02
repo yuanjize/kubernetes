@@ -30,7 +30,7 @@ import (
 	"code.google.com/p/go.net/html/atom"
 	"github.com/golang/glog"
 )
-
+// 这个玩意就是一个反向代理，代理的是气的node。如果想通过apiserver向别的node的kubelet获取信息，那么使用这个就行。
 // TODO: replace with proxy handler on minions
 func handleProxyMinion(w http.ResponseWriter, req *http.Request) {
 	path := strings.TrimLeft(req.URL.Path, "/")

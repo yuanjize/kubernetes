@@ -29,7 +29,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/watch"
 )
-
+// 看起来是用过storge watch函数来watch一些资源，支持的资源有，pod，endpoint，service，controller
 type WatchHandler struct {
 	storage map[string]RESTStorage
 	codec   runtime.Codec

@@ -22,7 +22,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/httplog"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
 )
-
+// 跟proxy相似
 type RedirectHandler struct {
 	storage map[string]RESTStorage
 	codec   runtime.Codec

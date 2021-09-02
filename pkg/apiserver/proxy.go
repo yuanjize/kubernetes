@@ -74,7 +74,12 @@ type ProxyHandler struct {
 	storage map[string]RESTStorage
 	codec   runtime.Codec
 }
-
+/*
+三个参数。
+1.storge名字。目前看来只支持service
+2.资源ID，也就是service的id
+3.path，也就是最终反向代理到的endpoint的后面要跟的path
+*/
 func (r *ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	parts := strings.SplitN(req.URL.Path, "/", 3)
 	if len(parts) < 2 {

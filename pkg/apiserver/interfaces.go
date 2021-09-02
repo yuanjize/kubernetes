@@ -56,7 +56,7 @@ type ResourceWatcher interface {
 	// particular version.
 	Watch(label, field labels.Selector, resourceVersion uint64) (watch.Interface, error)
 }
-
+// 把一个资源转发到另一个资源。目前来看只有service实现了这个接口，把service反向代理到具体的endpoint
 // Redirector know how to return a remote resource's location.
 type Redirector interface {
 	// ResourceLocation should return the remote location of the given resource, or an error.

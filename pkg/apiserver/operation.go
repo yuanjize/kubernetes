@@ -28,7 +28,11 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 )
+/*
+这些代码是用来记录执行的操作的集合
 
+下面的handle是用来获取operation，看起来只返回opid
+*/
 type OperationHandler struct {
 	ops   *Operations
 	codec runtime.Codec
@@ -60,25 +64,25 @@ func (h *OperationHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		writeJSON(http.StatusAccepted, h.codec, obj, w)
 	}
 }
-
+// Operation 是一个正在进行的操作
 // Operation represents an ongoing action which the server is performing.
 type Operation struct {
 	ID       string
-	result   runtime.Object
-	awaiting <-chan runtime.Object
-	finished *time.Time
+	result   runtime.Object         //操作结果
+	awaiting <-chan runtime.Object  // 用来等待操作的结果
+	finished *time.Time             //操作完成时间
 	lock     sync.Mutex
-	notify   chan struct{}
+	notify   chan struct{}          // 用来通知操作完成
 }
 
 // Operations tracks all the ongoing operations.
 type Operations struct {
 	// Access only using functions from atomic.
-	lastID int64
+	lastID int64  // 操作id，是一个自增值
 
 	// 'lock' guards the ops map.
 	lock sync.Mutex
-	ops  map[string]*Operation
+	ops  map[string]*Operation //当前未完成操作的集合，定时会清理已经完成的操作。
 }
 
 // NewOperations returns a new Operations repository.
@@ -89,7 +93,7 @@ func NewOperations() *Operations {
 	go util.Forever(func() { ops.expire(10 * time.Minute) }, 5*time.Minute)
 	return ops
 }
-
+// 创建一个Operation，并加入当前的操作集合，并在单独的线程中国调用wait等待操作完成。 当from读成功的时候就代表任务已经完成。其实就是等待from，from就是代表任务
 // NewOperation adds a new operation. It is lock-free.
 func (ops *Operations) NewOperation(from <-chan runtime.Object) *Operation {
 	id := atomic.AddInt64(&ops.lastID, 1)
@@ -135,6 +139,7 @@ func (ops *Operations) Get(id string) *Operation {
 }
 
 // expire garbage collect operations that have finished longer than maxAge ago.
+// maxAge秒钟之前就已经完成的操作从集合中移除
 func (ops *Operations) expire(maxAge time.Duration) {
 	ops.lock.Lock()
 	defer ops.lock.Unlock()
@@ -153,6 +158,7 @@ func (ops *Operations) expire(maxAge time.Duration) {
 // does complete, and closes the notify channel, in case there
 // are any WaitFor() calls in progress.
 // Does not keep op locked while waiting.
+// 一直等待，直到操作完成
 func (op *Operation) wait() {
 	defer util.HandleCrash()
 	result := <-op.awaiting
@@ -167,6 +173,7 @@ func (op *Operation) wait() {
 
 // WaitFor waits for the specified duration, or until the operation finishes,
 // whichever happens first.
+// 上面操作的超时本版本
 func (op *Operation) WaitFor(timeout time.Duration) {
 	select {
 	case <-time.After(timeout):
@@ -175,6 +182,7 @@ func (op *Operation) WaitFor(timeout time.Duration) {
 }
 
 // expired returns true if this operation finished before limitTime.
+// 操作在limitTime时间点之前已经完成了，那么是操作过期了
 func (op *Operation) expired(limitTime time.Time) bool {
 	op.lock.Lock()
 	defer op.lock.Unlock()
@@ -183,7 +191,7 @@ func (op *Operation) expired(limitTime time.Time) bool {
 	}
 	return op.finished.Before(limitTime)
 }
-
+//返回当前操作的状态，是是已经完成还是正在进行
 // StatusOrResult returns status information or the result of the operation if it is complete,
 // with a bool indicating true in the latter case.
 func (op *Operation) StatusOrResult() (description runtime.Object, finished bool) {

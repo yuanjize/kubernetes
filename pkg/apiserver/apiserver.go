@@ -47,11 +47,12 @@ type defaultAPIServer struct {
 // Handle returns a Handler function that expose the provided storage interfaces
 // as RESTful resources at prefix, serialized by codec, and also includes the support
 // http resources.
+// 注册各种http api
 func Handle(storage map[string]RESTStorage, codec runtime.Codec, prefix string) http.Handler {
-	group := NewAPIGroup(storage, codec)
+	group := NewAPIGroup(storage, codec)  //一些对object进行增删改查的api
 
 	mux := http.NewServeMux()
-	group.InstallREST(mux, prefix)
+	group.InstallREST(mux, prefix) // 注册各种handler
 	InstallSupport(mux)
 
 	return &defaultAPIServer{RecoverPanics(mux), group}
@@ -94,10 +95,15 @@ func (g *APIGroup) InstallREST(mux mux, paths ...string) {
 	for _, prefix := range paths {
 		prefix = strings.TrimRight(prefix, "/")
 		proxyHandler := &ProxyHandler{prefix + "/proxy/", g.handler.storage, g.handler.codec}
+		// 对object进行增删改查的api
 		mux.Handle(prefix+"/", http.StripPrefix(prefix, restHandler))
+		// 对外部提供对资源的watch操作
 		mux.Handle(prefix+"/watch/", http.StripPrefix(prefix+"/watch/", watchHandler))
+		// 目前来看这个玩意是把对service的访问重定向的某个endpoint的，目前只有service实现了
 		mux.Handle(prefix+"/proxy/", http.StripPrefix(prefix+"/proxy/", proxyHandler))
+		// 和上面的差不多，但是看起来是重定向，也没有上面那么细致
 		mux.Handle(prefix+"/redirect/", http.StripPrefix(prefix+"/redirect/", redirectHandler))
+		// 获取当前正在执行的操作的api
 		mux.Handle(prefix+"/operations", http.StripPrefix(prefix+"/operations", opHandler))
 		mux.Handle(prefix+"/operations/", http.StripPrefix(prefix+"/operations/", opHandler))
 	}
@@ -105,11 +111,11 @@ func (g *APIGroup) InstallREST(mux mux, paths ...string) {
 
 // InstallSupport registers the APIServer support functions into a mux.
 func InstallSupport(mux mux) {
-	healthz.InstallHandler(mux)
-	mux.Handle("/logs/", http.StripPrefix("/logs/", http.FileServer(http.Dir("/var/log/"))))
-	mux.Handle("/proxy/minion/", http.StripPrefix("/proxy/minion", http.HandlerFunc(handleProxyMinion)))
-	mux.HandleFunc("/version", handleVersion)
-	mux.HandleFunc("/", handleIndex)
+	healthz.InstallHandler(mux)  // 注册的健康检查接口
+	mux.Handle("/logs/", http.StripPrefix("/logs/", http.FileServer(http.Dir("/var/log/")))) // 看起来是下载日志文件的接口
+	mux.Handle("/proxy/minion/", http.StripPrefix("/proxy/minion", http.HandlerFunc(handleProxyMinion))) // node（机器）的反向代理，通过apiserver的这个接口可以访问某个node的kubelete
+	mux.HandleFunc("/version", handleVersion) // 返回版本号
+	mux.HandleFunc("/", handleIndex) // 返回 Welcome to Kubernetes字符串、、、就是一个index页面，不用管
 }
 
 // RecoverPanics wraps an http Handler to recover and log panics.
@@ -141,7 +147,7 @@ func RecoverPanics(handler http.Handler) http.Handler {
 func handleVersion(w http.ResponseWriter, req *http.Request) {
 	writeRawJSON(http.StatusOK, version.Get(), w)
 }
-
+// 查到的object写出去
 // writeJSON renders an object as JSON to the response.
 func writeJSON(statusCode int, codec runtime.Codec, object runtime.Object, w http.ResponseWriter) {
 	output, err := codec.Encode(object)
@@ -171,7 +177,7 @@ func writeRawJSON(statusCode int, object interface{}, w http.ResponseWriter) {
 	w.WriteHeader(statusCode)
 	w.Write(output)
 }
-
+// 解析字符串为时间，单位是秒
 func parseTimeout(str string) time.Duration {
 	if str != "" {
 		timeout, err := time.ParseDuration(str)

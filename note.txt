@@ -5,5 +5,34 @@ client是一些http api，拿起来使用来访问具体的pod节点的。
 
 目前来看所有的 Registry 接口都是ETCD接口
 NewREST 函数创建的都是用来为master作为server用的处理函数
+storge是接口，NewREST返回的对象都实现了这个接口，这个接口又是Etcd接口的封装(Registry)
 
 PodCache就是在内存里缓存了PodInfo定时会从etcd拿到所有的pod地址，然后使用http api请求这些pod然后去更新内存cache
+
+总结一下apiserver，其实就是对外提供了几个api接口：
+  1.对外提供对object的增删改查
+  2.对service的反向代理，代理到了endpoints上
+  3.反向代理，可以访问node上的kubelet的接口
+
+
+/apiserver
+   apiserver.go   // 主要函数，用来初始化各种http api
+   async.go       // Sync用来执行异步任务
+   index.go       //返回 Welcome to Kubernetes字符串、、、就是一个index页面，不用管
+   interfaces.go  // ResourceWatcher 用来对外提供一些watch资源的api，看watch.go的注释.  RESTStorage对外剔红操作资源的rest接口，实际就是对etcd操作的封装。 Redirector  对服务的访问可以重定向到某得enpoint
+   minionproxy.go // // 这个玩意就是一个反向代理，代理的是node(虚拟机)。如果想通过apiserver向别的node的kubelet获取信息，那么使用这个就行。
+   operation.go      // 记录当前正在进行和已经执行完的操作，并对外提供查询操作的http api
+   proxy.go          // 目前来看是用来转发请求的，实现了Redirector接口的资源才可以使用这个api，目前来看只有service资源实现了这个接口，。用来把对service的请求反向代理到endpoint
+   redirect.go       // 暂时认为和proxy对外提供的接口差不多
+   resthandler.go    // 对外提供http api，允许外部对object(runtime.object)进行增删改查，这个是个主要文件，操作资源的
+   watch.go          // 对外提供http api， 看起来是用过storge watch函数来watch一些资源，支持的资源有，pod，endpoint，service，controller
+/healthz
+   healthz.go // 注册的健康检查接口，没啥好看的(目前看是给api server用的)
+
+/registry
+   /etcd 这个就是本文件夹下面其他文件夹要用的registry的真正实现
+   该文件夹下面的 registry文件定义了对该资源文件操作的接口，这些接口都是etcd实现的，rest.go 文件定义了apiserver给外部提供的对资源进行增删改查的接口，实际操作都是作为registry的etcd接口完成的.
+
+/tools
+   etcd_tools.go // etcd工具类
+  resthandler.go RESTHandler

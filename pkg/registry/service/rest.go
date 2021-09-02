@@ -170,7 +170,7 @@ func (rs *REST) Update(obj runtime.Object) (<-chan runtime.Object, error) {
 		return rs.registry.GetService(srv.ID)
 	}), nil
 }
-
+// 对服务的访问可以重定向到某得enpoint
 // ResourceLocation returns a URL to which one can send traffic for the specified service.
 func (rs *REST) ResourceLocation(id string) (string, error) {
 	e, err := rs.registry.GetEndpoints(id)

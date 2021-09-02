@@ -26,11 +26,15 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
 )
 
+/*
+这个函数其实就是对外提供接口，让外部可以对用api对object进行增删改查
+*/
+
 type RESTHandler struct {
 	storage     map[string]RESTStorage
 	codec       runtime.Codec
 	ops         *Operations
-	asyncOpWait time.Duration
+	asyncOpWait time.Duration   // 对某个操作要等多长时间
 }
 
 // ServeHTTP handles requests to all RESTStorage objects.
@@ -64,12 +68,12 @@ func (h *RESTHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 //    timeout=<duration> Timeout for synchronous requests, only applies if sync=true
 //    labels=<label-selector> Used for filtering list operations
 func (h *RESTHandler) handleRESTStorage(parts []string, req *http.Request, w http.ResponseWriter, storage RESTStorage) {
-	sync := req.URL.Query().Get("sync") == "true"
-	timeout := parseTimeout(req.URL.Query().Get("timeout"))
+	sync := req.URL.Query().Get("sync") == "true"            //获取sync参数，判断是否都是同步请求
+	timeout := parseTimeout(req.URL.Query().Get("timeout"))  // 获取超时时间
 	switch req.Method {
 	case "GET":
 		switch len(parts) {
-		case 1:
+		case 1:   // 调用list函数，根据labels获取对应的资源 LIST操作。并返回信息
 			selector, err := labels.ParseSelector(req.URL.Query().Get("labels"))
 			if err != nil {
 				errorJSON(err, h.codec, w)
@@ -81,7 +85,7 @@ func (h *RESTHandler) handleRESTStorage(parts []string, req *http.Request, w htt
 				return
 			}
 			writeJSON(http.StatusOK, h.codec, list, w)
-		case 2:
+		case 2:  // 调用GET函数，根据labels获取对应的资源 GET操作
 			item, err := storage.Get(parts[1])
 			if err != nil {
 				errorJSON(err, h.codec, w)
@@ -92,7 +96,7 @@ func (h *RESTHandler) handleRESTStorage(parts []string, req *http.Request, w htt
 			notFound(w, req)
 		}
 
-	case "POST":
+	case "POST":  // 创建一个object，并记录operation状态，，最后把该状态返回给用户
 		if len(parts) != 1 {
 			notFound(w, req)
 			return
@@ -116,7 +120,7 @@ func (h *RESTHandler) handleRESTStorage(parts []string, req *http.Request, w htt
 		op := h.createOperation(out, sync, timeout)
 		h.finishReq(op, w)
 
-	case "DELETE":
+	case "DELETE":  // 删除一个object，并记录operation，最后返回给用户operation状态
 		if len(parts) != 2 {
 			notFound(w, req)
 			return
@@ -129,7 +133,7 @@ func (h *RESTHandler) handleRESTStorage(parts []string, req *http.Request, w htt
 		op := h.createOperation(out, sync, timeout)
 		h.finishReq(op, w)
 
-	case "PUT":
+	case "PUT":  //  更新一个object，并记录operation，最后返回给用户operation状态
 		if len(parts) != 2 {
 			notFound(w, req)
 			return
@@ -157,7 +161,7 @@ func (h *RESTHandler) handleRESTStorage(parts []string, req *http.Request, w htt
 		notFound(w, req)
 	}
 }
-
+// 创建一个operation,并等待operation完成(异步的话直接返回operation)。（就是等待out出结果）
 // createOperation creates an operation to process a channel response.
 func (h *RESTHandler) createOperation(out <-chan runtime.Object, sync bool, timeout time.Duration) *Operation {
 	op := h.ops.NewOperation(out)
@@ -168,7 +172,7 @@ func (h *RESTHandler) createOperation(out <-chan runtime.Object, sync bool, time
 	}
 	return op
 }
-
+// 其实就是读取operation的状态并返回
 // finishReq finishes up a request, waiting until the operation finishes or, after a timeout, creating an
 // Operation to receive the result and returning its ID down the writer.
 func (h *RESTHandler) finishReq(op *Operation, w http.ResponseWriter) {
