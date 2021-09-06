@@ -36,3 +36,9 @@ PodCache就是在内存里缓存了PodInfo定时会从etcd拿到所有的pod地�
 /tools
    etcd_tools.go // etcd工具类
   resthandler.go RESTHandler
+
+
+replication_controller主要工作
+    监听replication的变化，每次有变化就看pod数目满足不满足，如果不满足就掉用apiserver的接口去创建删除
+    定时从apiserver拉取所有的replication，查看pod数目满足不满足，如果不满足就掉用apiserver的接口去创建删除
+这个东西说白了就是监控pod个数是不是合法，不合法就纠正，所有操作基本都是通过apiserver完成的。

@@ -34,7 +34,10 @@ import (
 var (
 	master = flag.String("master", "", "The address of the Kubernetes API server")
 )
-
+/*
+   监听replication的变化，每次有变化就看pod数目满足不满足，如果不满足就掉用apiserver的接口去创建删除
+   定时从apiserver拉取所有的replication，查看pod数目满足不满足，如果不满足就掉用apiserver的接口去创建删除
+*/
 func main() {
 	flag.Parse()
 	util.InitLogs()
