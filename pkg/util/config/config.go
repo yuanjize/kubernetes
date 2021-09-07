@@ -21,7 +21,9 @@ import (
 
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 )
-
+/*
+这玩意返回一个channel，外面写该工具类的channel的时候会调用对应的Merge函数
+*/
 type Merger interface {
 	// Invoked when a change from a source is received.  May also function as an incremental
 	// merger if you wish to consume changes incrementally.  Must be reentrant when more than
@@ -109,7 +111,9 @@ type ListenerFunc func(instance interface{})
 func (f ListenerFunc) OnUpdate(instance interface{}) {
 	f(instance)
 }
-
+/*
+就是一个普通的观察者模式，Notify的时候会调用所有的listener
+*/
 type Watcher struct {
 	// Listeners for changes and their lock.
 	listenerLock sync.RWMutex

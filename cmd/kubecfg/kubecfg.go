@@ -88,7 +88,7 @@ Options:
 	flag.PrintDefaults()
 
 }
-
+// 打印出所有的storge/runtime.object名称，也就是pod。service啥的
 func prettyWireStorage() string {
 	types := parser.SupportedWireStorage()
 	sort.Strings(types)
@@ -175,6 +175,7 @@ func main() {
 	}
 
 	if *proxy {
+		// 作为apiserver的代理启动
 		glog.Info("Starting to serve on localhost:8001")
 		server := kubecfg.NewProxyServer(*www, kubeClient)
 		glog.Fatal(server.Serve())
@@ -191,7 +192,7 @@ func main() {
 		glog.Fatalf("Unknown command %s", method)
 	}
 }
-
+// pod/123
 // storagePathFromArg normalizes a path and breaks out the first segment if available
 func storagePathFromArg(arg string) (storage, path string, hasSuffix bool) {
 	path = strings.Trim(arg, "/")
@@ -202,7 +203,7 @@ func storagePathFromArg(arg string) (storage, path string, hasSuffix bool) {
 	}
 	return storage, path, hasSuffix
 }
-
+// 检查storge是否有效
 //checkStorage returns true if the provided storage is valid
 func checkStorage(storage string) bool {
 	for _, allowed := range parser.SupportedWireStorage() {
@@ -212,7 +213,7 @@ func checkStorage(storage string) bool {
 	}
 	return false
 }
-
+// 就是根据命令行参数执行apiserver 的api调用
 func executeAPIRequest(method string, c *client.Client) bool {
 	storage, path, hasSuffix := storagePathFromArg(flag.Arg(1))
 	validStorage := checkStorage(storage)
@@ -329,7 +330,7 @@ func executeAPIRequest(method string, c *client.Client) bool {
 
 	return true
 }
-
+// 执行controller操作
 func executeControllerRequest(method string, c *client.Client) bool {
 	parseController := func() string {
 		if len(flag.Args()) != 2 {
@@ -340,13 +341,13 @@ func executeControllerRequest(method string, c *client.Client) bool {
 
 	var err error
 	switch method {
-	case "stop":
+	case "stop": // 调用apiserver的借口，删除api controller（设置pod副本数目为0）
 		err = kubecfg.StopController(parseController(), c)
-	case "rm":
+	case "rm":  // 调用apiserver的借口，删除api controller
 		err = kubecfg.DeleteController(parseController(), c)
-	case "rollingupdate":
+	case "rollingupdate":  //滚动更新，操作就是kubecfg每隔updatePeriod时间删除一个旧的pod，controller会创建一个新的
 		err = kubecfg.Update(parseController(), c, *updatePeriod, *imageName)
-	case "run":
+	case "run":  // 创建controller和service
 		if len(flag.Args()) != 4 {
 			glog.Fatal("usage: kubecfg [OPTIONS] run <image> <replicas> <controller>")
 		}
@@ -357,7 +358,7 @@ func executeControllerRequest(method string, c *client.Client) bool {
 		}
 		name := flag.Arg(3)
 		err = kubecfg.RunController(image, name, replicas, c, *portSpec, *servicePort)
-	case "resize":
+	case "resize":  // 重新设置副本数目
 		args := flag.Args()
 		if len(args) < 3 {
 			glog.Fatal("usage: kubecfg resize <controller> <replicas>")

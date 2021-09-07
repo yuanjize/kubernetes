@@ -42,3 +42,51 @@ replication_controller主要工作
     监听replication的变化，每次有变化就看pod数目满足不满足，如果不满足就掉用apiserver的接口去创建删除
     定时从apiserver拉取所有的replication，查看pod数目满足不满足，如果不满足就掉用apiserver的接口去创建删除
 这个东西说白了就是监控pod个数是不是合法，不合法就纠正，所有操作基本都是通过apiserver完成的。
+
+kubecfg主要工作
+  1.通过apiserver提供的api对object进行增删改查 2.对controller进行操作，包括修改pod副本数，对controller进行增删改查主要的操作有两个：1.通过apiserver提供的api对object进行增删改查 2.对controller(apiserver 的api)进行操作，包括修改pod副本数，对controller进行增删改查（滚动更新啥的）
+kubecfg
+├── doc.go
+├── kubecfg.go         // 一些实际干活儿的部分，主要的操作有两个：1.通过apiserver提供的api对object进行增删改查 2.对controller进行操作，包括修改pod副本数，对controller进行增删改查
+├── parse.go           // 注册了一些runtime.Object类型，用来根据storge创建对应的runtime.Object
+├── proxy_server.go    // 代理类，kubecfg可以用代理模式启动，然后作为apiserver的代理
+├── resource_printer.go // 一些用来打印runtime.object的工具
+
+Proxy主要工作
+   监听service和endpoint的变化，每次有service连接进来的时候根据robin算法选出来一个endpoint，作为他们俩的代理
+├── config
+│──├── api.go     //监听apiserver，如果有变化通知config.go中定义的接口
+│──├── config.go  // 定义了service和endpoint的内存cache，提供接口监听service和endpoint的变化
+│──├── doc.go
+│──├── etcd.go   // 监听etcd，如果有变化通知config.go中定义的接口
+│──└── file.go   // 监听配置文件，如果有变化通知config.go中定义的接口
+├── doc.go
+├── loadbalancer.go  // 对endpoint进行负载均衡的接口, 有个NextEndpoint函数用来返回下一个要用的endpoint
+├── proxier.go   // 真正完成代理工作的类，他会监听service更新，当有service更新时，对该service启动代理。代理工作就是当service有对应的连接进来的时候首先用loadbalancer选出来一个endpoint，然后对这个连接和endpoint做代理
+├── roundrobin.go //  负责需在均衡工作，监听endpoint变化，每次调用NextEndpoint使用roundrobin算法取出来一个endpoint
+
+
+
+├── config
+│├── config.go
+│├── config_test.go
+│├── doc.go
+│├── etcd.go
+│├── etcd_test.go
+│├── file.go
+│├── file_test.go
+│├── http.go
+│└── http_test.go
+├── doc.go
+├── docker.go
+├── fake_docker_client.go
+├── handlers.go
+├── handlers_test.go
+├── kubelet.go
+├── kubelet_test.go
+├── server.go
+├── server_test.go
+├── types.go       // kublete和proxy一样有object的cache只不过它cache的是pod，这个文件记录的就是cache用的一些协议对象。（kublete和proxy 的cache接口长得很像，基本都一样。。）
+├── validation.go
+└── validation_test.go
+

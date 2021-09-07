@@ -33,7 +33,7 @@ const (
 	ADD
 	REMOVE
 )
-
+// serivce更新数据
 // ServiceUpdate describes an operation of services, sent on the channel.
 // You can add or remove single services by sending an array of size one and Op == ADD|REMOVE.
 // For setting the state of the system to a given state for this source configuration, set Services as desired and Op to SET,
@@ -43,7 +43,7 @@ type ServiceUpdate struct {
 	Services []api.Service
 	Op       Operation
 }
-
+// endpoint更新数据
 // EndpointsUpdate describes an operation of endpoints, sent on the channel.
 // You can add or remove single endpoints by sending an array of size one and Op == ADD|REMOVE.
 // For setting the state of the system to a given state for this source configuration, set Endpoints as desired and Op to SET,
@@ -76,24 +76,26 @@ type EndpointsConfig struct {
 	watcher *config.Watcher
 	store   *endpointsStore
 }
-
+/*
+监听endpoint变化，然后同步到内存
+*/
 // NewEndpointsConfig creates a new EndpointsConfig.
 // It immediately runs the created EndpointsConfig.
 func NewEndpointsConfig() *EndpointsConfig {
-	updates := make(chan struct{})
+	updates := make(chan struct{}) // endpointsStore收到新数据之后会进行merge。merge之后就写该chan
 	store := &endpointsStore{updates: updates, endpoints: make(map[string]map[string]api.Endpoints)}
 	mux := config.NewMux(store)
 	watcher := config.NewWatcher()
-	go watchForUpdates(watcher, store, updates)
+	go watchForUpdates(watcher, store, updates)  // 注册watch
 	return &EndpointsConfig{mux, watcher, store}
 }
-
+// 添加endpoint改变的handler
 func (c *EndpointsConfig) RegisterHandler(handler EndpointsConfigHandler) {
 	c.watcher.Add(config.ListenerFunc(func(instance interface{}) {
 		handler.OnUpdate(instance.([]api.Endpoints))
 	}))
 }
-
+// source是数据源，可以是api或者etcd,该函数返回一个channen，当往这个channel写数据的时候就代表有endpoint的操作发生，就会调用endpointsStore.Merge进行处理(对本地配置进行更新)
 func (c *EndpointsConfig) Channel(source string) chan EndpointsUpdate {
 	ch := c.mux.Channel(source)
 	endpointsCh := make(chan EndpointsUpdate)
@@ -105,11 +107,11 @@ func (c *EndpointsConfig) Channel(source string) chan EndpointsUpdate {
 	}()
 	return endpointsCh
 }
-
+//返回当前endpoint数据
 func (c *EndpointsConfig) Config() map[string]map[string]api.Endpoints {
 	return c.store.MergedState().(map[string]map[string]api.Endpoints)
 }
-
+// 内存中真正保存endpoints数据的地方，当有endpoint数据操作的的时候会回调该函数的merge函数来更新内存数据
 type endpointsStore struct {
 	endpointLock sync.RWMutex
 	endpoints    map[string]map[string]api.Endpoints
@@ -151,7 +153,7 @@ func (s *endpointsStore) Merge(source string, change interface{}) error {
 	}
 	return nil
 }
-
+// 返回endpoint数据
 func (s *endpointsStore) MergedState() interface{} {
 	s.endpointLock.RLock()
 	defer s.endpointLock.RUnlock()
@@ -163,7 +165,9 @@ func (s *endpointsStore) MergedState() interface{} {
 	}
 	return endpoints
 }
-
+/*
+监听service变化，然后同步到内存。逻辑和上面一毛一样
+*/
 // ServiceConfig tracks a set of service configurations.
 // It accepts "set", "add" and "remove" operations of services via channels, and invokes registered handlers on change.
 type ServiceConfig struct {
@@ -258,7 +262,7 @@ func (s *serviceStore) MergedState() interface{} {
 	}
 	return services
 }
-
+// updates有数据进来的时候调用watch
 // watchForUpdates invokes watcher.Notify() with the latest version of an object
 // when changes occur.
 func watchForUpdates(watcher *config.Watcher, accessor config.Accessor, updates <-chan struct{}) {

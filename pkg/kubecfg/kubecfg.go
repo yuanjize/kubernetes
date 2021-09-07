@@ -73,7 +73,10 @@ func LoadAuthInfo(path string, r io.Reader) (*client.AuthInfo, error) {
 	}
 	return &auth, err
 }
-
+/*
+滚动更新
+   每隔updatePeriod时间段，kubecfg就会删除一个旧的pod，controller就会添加一个新的pod
+*/
 // Update performs a rolling update of a collection of pods.
 // 'name' points to a replication controller.
 // 'client' is used for updating pods.
@@ -106,6 +109,7 @@ func Update(name string, client client.Interface, updatePeriod time.Duration, im
 	if expected == 0 {
 		return nil
 	}
+	// 这边每删一个，controller就会添加一个新的
 	for _, pod := range podList.Items {
 		// We delete the pod here, the controller will recreate it.  This will result in pulling
 		// a new Docker image.  This isn't a full "update" but it's what we support for now.
@@ -115,6 +119,7 @@ func Update(name string, client client.Interface, updatePeriod time.Duration, im
 		}
 		time.Sleep(updatePeriod)
 	}
+	// 每5s检查一次pod数目是否对的上，如果300s还没对上就超时
 	return wait.Poll(time.Second*5, time.Second*300, func() (bool, error) {
 		podList, err := client.ListPods(s)
 		if err != nil {
@@ -124,11 +129,12 @@ func Update(name string, client client.Interface, updatePeriod time.Duration, im
 	})
 }
 
+// 停止controller（就是pod副本数目设置为0）
 // StopController stops a controller named 'name' by setting replicas to zero.
 func StopController(name string, client client.Interface) error {
 	return ResizeController(name, 0, client)
 }
-
+// 重新设置副本数目
 // ResizeController resizes a controller named 'name' by setting replicas to 'replicas'.
 func ResizeController(name string, replicas int, client client.Interface) error {
 	controller, err := client.GetReplicationController(name)
@@ -147,7 +153,7 @@ func ResizeController(name string, replicas int, client client.Interface) error 
 	fmt.Print(string(data))
 	return nil
 }
-
+// hostport:containerport
 func portsFromString(spec string) []api.Port {
 	parts := strings.Split(spec, ",")
 	var result []api.Port
@@ -171,7 +177,7 @@ func portsFromString(spec string) []api.Port {
 	}
 	return result
 }
-
+// 根据参数创建controller和service
 // RunController creates a new replication controller named 'name' which creates 'replicas' pods running 'image'.
 func RunController(image, name string, replicas int, client client.Interface, portSpec string, servicePort int) error {
 	controller := &api.ReplicationController{
@@ -242,6 +248,7 @@ func createService(name string, port int, client client.Interface) (*api.Service
 	return svc, err
 }
 
+// 删除replicactecontroller
 // DeleteController deletes a replication controller named 'name', requires that the controller
 // already be stopped.
 func DeleteController(name string, client client.Interface) error {

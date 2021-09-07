@@ -58,6 +58,7 @@ type WaitFunc func() <-chan struct{}
 // returns an error the loop ends and that error is returned, and if c returns
 // true the loop ends and nil is returned. ErrWaitTimeout will be returned if
 // the channel is closed without c every returning true.
+// 执行循环ConditionFunc直到它成功或者超时
 func WaitFor(wait WaitFunc, c ConditionFunc) error {
 	w := wait()
 	for {
@@ -75,7 +76,7 @@ func WaitFor(wait WaitFunc, c ConditionFunc) error {
 	}
 	return ErrWaitTimeout
 }
-
+// 每间隔interval时间检查一次result，timeout是超时时间
 // poller returns a WaitFunc that will send to the channel every
 // interval until timeout has elapsed and then close the channel.
 // Over very short intervals you may receive no ticks before

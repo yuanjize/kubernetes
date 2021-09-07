@@ -31,7 +31,10 @@ var (
 	ErrMissingServiceEntry = errors.New("missing service entry")
 	ErrMissingEndpoints    = errors.New("missing endpoints")
 )
-
+/*
+负责负载均衡
+  监听endpoint变化，每次调用NextEndpoint使用roundrobin算法取出来一个endpoint
+*/
 // LoadBalancerRR is a round-robin load balancer.
 type LoadBalancerRR struct {
 	lock         sync.RWMutex
@@ -46,7 +49,7 @@ func NewLoadBalancerRR() *LoadBalancerRR {
 		rrIndex:      make(map[string]int),
 	}
 }
-
+// 选出来一个endpoint
 // NextEndpoint returns a service endpoint.
 // The service endpoint is chosen using the round-robin algorithm.
 func (lb *LoadBalancerRR) NextEndpoint(service string, srcAddr net.Addr) (string, error) {
@@ -66,7 +69,7 @@ func (lb *LoadBalancerRR) NextEndpoint(service string, srcAddr net.Addr) (string
 	lb.lock.Unlock()
 	return endpoint, nil
 }
-
+// 校验endpoint是否合法
 func isValidEndpoint(spec string) bool {
 	_, port, err := net.SplitHostPort(spec)
 	if err != nil {
@@ -78,7 +81,7 @@ func isValidEndpoint(spec string) bool {
 	}
 	return value > 0
 }
-
+// 过滤掉不合法的endpoint
 func filterValidEndpoints(endpoints []string) []string {
 	var result []string
 	for _, spec := range endpoints {

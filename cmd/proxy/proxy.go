@@ -46,10 +46,11 @@ func main() {
 
 	verflag.PrintAndExitIfRequested()
 
+	// 创建两个config来监听service和endpoint变化，并更新内存
 	serviceConfig := config.NewServiceConfig()
 	endpointsConfig := config.NewEndpointsConfig()
 
-	// define api config source
+	// define api config source 通过apiserver来监听service和endpoint变化
 	if *master != "" {
 		glog.Infof("Using api calls to get config %v", *master)
 		//TODO: add auth info
@@ -66,7 +67,7 @@ func main() {
 	}
 
 	// Create a configuration source that handles configuration from etcd.
-	if len(etcdServerList) > 0 && *master == "" {
+	if len(etcdServerList) > 0 && *master == "" { // 通过etcd来监听service和endpoint变化
 		glog.Infof("Using etcd servers %v", etcdServerList)
 
 		// Set up logger for etcd client
@@ -77,7 +78,7 @@ func main() {
 			endpointsConfig.Channel("etcd"))
 	}
 
-	// And create a configuration source that reads from a local file
+	// And create a configuration source that reads from a local file  通过etcd来监听service和endpoint变化
 	config.NewConfigSourceFile(*configFile,
 		serviceConfig.Channel("file"),
 		endpointsConfig.Channel("file"))
@@ -86,9 +87,9 @@ func main() {
 	loadBalancer := proxy.NewLoadBalancerRR()
 	proxier := proxy.NewProxier(loadBalancer)
 	// Wire proxier to handle changes to services
-	serviceConfig.RegisterHandler(proxier)
+	serviceConfig.RegisterHandler(proxier) // proxier监听service变化
 	// And wire loadBalancer to handle changes to endpoints to services
-	endpointsConfig.RegisterHandler(loadBalancer)
+	endpointsConfig.RegisterHandler(loadBalancer) // loadBalancer监听endpoint变化
 
 	// Just loop forever for now...
 	select {}

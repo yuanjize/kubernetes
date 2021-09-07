@@ -22,6 +22,8 @@ package main
 
 import (
 	"flag"
+	docker "github.com/GoogleCloudPlatform/kubernetes/Godeps/_workspace/src/github.com/fsouza/go-dockerclient"
+	cadvisor "github.com/GoogleCloudPlatform/kubernetes/Godeps/_workspace/src/github.com/google/cadvisor/client"
 	"math/rand"
 	"net/http"
 	"os"
@@ -55,6 +57,7 @@ var (
 	address            = flag.String("address", "127.0.0.1", "The address for the info server to serve on (set to 0.0.0.0 or \"\" for all interfaces)")
 	port               = flag.Uint("port", 10250, "The port for the info server to serve on")
 	hostnameOverride   = flag.String("hostname_override", "", "If non-empty, will use this string as identification instead of the actual hostname.")
+	// docker守护进程socket
 	dockerEndpoint     = flag.String("docker_endpoint", "", "If non-empty, use this for the docker endpoint to communicate with")
 	etcdServerList     util.StringList
 	rootDirectory      = flag.String("root_dir", defaultRootDir, "Directory path for managing kubelet files (volume mounts,etc).")

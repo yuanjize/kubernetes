@@ -34,7 +34,7 @@ type Watcher interface {
 	WatchServices(label, field labels.Selector, resourceVersion uint64) (watch.Interface, error)
 	WatchEndpoints(label, field labels.Selector, resourceVersion uint64) (watch.Interface, error)
 }
-
+// 通过apiserver监听service和endpoint变化
 // SourceAPI implements a configuration source for services and endpoints that
 // uses the client watch API to efficiently detect changes.
 type SourceAPI struct {

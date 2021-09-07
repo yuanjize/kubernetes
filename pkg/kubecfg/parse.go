@@ -22,7 +22,9 @@ import (
 
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
 )
-
+/*
+注册了一些runtime.object元数据，到时候方便创建runtime.object对象
+*/
 type Parser struct {
 	storageToType map[string]reflect.Type
 }

@@ -68,7 +68,10 @@ func NewConfigSourceEtcd(client *etcd.Client, serviceChannel chan ServiceUpdate,
 	go config.Run()
 	return config
 }
-
+/*
+通过监听（watch）来监听delete和add操作
+定时全量查询来执行SET动作
+*/
 // Run begins watching for new services and their endpoints on etcd.
 func (s ConfigSourceEtcd) Run() {
 	// Initially, just wait for the etcd to come up before doing anything more complicated.
@@ -114,7 +117,7 @@ func (s ConfigSourceEtcd) Run() {
 		time.Sleep(30 * time.Second)
 	}
 }
-
+// 主动从etcd读取service和对应的endpoints
 // GetServices finds the list of services and their endpoints from etcd.
 // This operation is akin to a set a known good at regular intervals.
 func (s ConfigSourceEtcd) GetServices() ([]api.Service, []api.Endpoints, error) {
@@ -155,7 +158,7 @@ func (s ConfigSourceEtcd) GetServices() ([]api.Service, []api.Endpoints, error) 
 	}
 	return nil, nil, fmt.Errorf("did not get the root of the registry %s", registryRoot)
 }
-
+// 主动从etcd读取endpoints
 // GetEndpoints finds the list of endpoints of the service from etcd.
 func (s ConfigSourceEtcd) GetEndpoints(service string) (api.Endpoints, error) {
 	key := fmt.Sprintf(registryRoot + "/endpoints/" + service)
@@ -182,7 +185,7 @@ func etcdResponseToService(response *etcd.Response) (*api.Service, error) {
 	}
 	return &svc, err
 }
-
+// watch service，有变化就调用ProcessChange写到channel里面
 func (s ConfigSourceEtcd) WatchForChanges() {
 	glog.Info("Setting up a watch for new services")
 	watchChannel := make(chan *etcd.Response)

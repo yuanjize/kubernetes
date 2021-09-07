@@ -28,13 +28,18 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	"github.com/golang/glog"
 )
+/*
+ 当service更新的时候会调用该函数的onupdate，onupdate用startAccepting来对service进行代理。
+ startAccepting工作是当外部有请求进来时，从loadbalancer中选出来一个endpoint，然后对这个连接进行代理
 
+
+*/
 type serviceInfo struct {
-	name     string
+	name     string  // service名称
 	port     int
-	listener net.Listener
+	listener net.Listener  // 用来监听对该service的请求
 	mu       sync.Mutex // protects active
-	active   bool
+	active   bool  // 是否进行代理
 }
 
 // Proxier is a simple proxy for TCP connections between a localhost:lport
@@ -80,7 +85,7 @@ func (proxier *Proxier) StopProxy(service string) error {
 	}
 	return proxier.stopProxyInternal(info)
 }
-
+// 不接受新的连接
 func (proxier *Proxier) stopProxyInternal(info *serviceInfo) error {
 	info.mu.Lock()
 	defer info.mu.Unlock()
@@ -105,7 +110,7 @@ func (proxier *Proxier) setServiceInfo(service string, info *serviceInfo) {
 	info.name = service
 	proxier.serviceMap[service] = info
 }
-
+// 不断accept连接，然后从loadBalancer中选出来一个endpoint，将该连接和该endpoint进行代理
 // AcceptHandler proxies incoming connections for the specified service
 // to the load-balanced service endpoints.
 func (proxier *Proxier) AcceptHandler(service string, listener net.Listener) {
@@ -177,7 +182,7 @@ func (proxier *Proxier) startAccepting(service string, l net.Listener) {
 	glog.Infof("Listening for %s on %s", service, l.Addr().String())
 	go proxier.AcceptHandler(service, l)
 }
-
+// 当service更新的时候会调用该函数，该函数会为新的service建立代理
 // OnUpdate manages the active set of service proxies.
 // Active service proxies are reinitialized if found in the update set or
 // shutdown if missing from the update set.

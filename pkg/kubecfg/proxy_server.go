@@ -24,7 +24,9 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
 )
-
+/*
+最为apiserver的代理启动
+*/
 // ProxyServer is a http.Handler which proxies Kubernetes APIs to remote API server.
 type ProxyServer struct {
 	Client *client.Client

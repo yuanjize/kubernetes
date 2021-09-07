@@ -42,7 +42,9 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
 	"github.com/golang/glog"
 )
-
+/*
+监听service和endpoints的配置文件
+*/
 // serviceConfig is a deserialized form of the config file format which ConfigSourceFile accepts.
 type serviceConfig struct {
 	Services []struct {

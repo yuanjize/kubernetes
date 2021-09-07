@@ -101,6 +101,7 @@ type podStorage struct {
 // TODO: PodConfigNotificationMode could be handled by a listener to the updates channel
 // in the future, especially with multiple listeners.
 // TODO: allow initialization of the current state of the store with snapshotted version.
+// 可以认为是一个pod的cache，会监听pod的增删改查然后改变cache并回调一些listener
 func newPodStorage(updates chan<- kubelet.PodUpdate, mode PodConfigNotificationMode) *podStorage {
 	return &podStorage{
 		pods:    make(map[string]map[string]*kubelet.Pod),
