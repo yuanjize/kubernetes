@@ -19,6 +19,7 @@ package kubelet
 import (
 	"errors"
 	"fmt"
+	docker "github.com/GoogleCloudPlatform/kubernetes/Godeps/_workspace/src/github.com/fsouza/go-dockerclient"
 	"hash/adler32"
 	"math/rand"
 	"os/exec"
@@ -29,7 +30,12 @@ import (
 	"github.com/fsouza/go-dockerclient"
 	"github.com/golang/glog"
 )
-
+/*
+主要提供了几个接口：
+  1.在指定的容器中执行命令
+  2.在获取容器信（inspact）
+  3.把image pull下来
+*/
 // DockerContainerData is the structured representation of the JSON object returned by Docker inspect
 type DockerContainerData struct {
 	state struct {
@@ -66,7 +72,7 @@ func NewDockerPuller(client DockerInterface) DockerPuller {
 		client: client,
 	}
 }
-
+// 这个玩意就是在指定的容器里运行docker命令
 type dockerContainerCommandRunner struct{}
 
 func (d *dockerContainerCommandRunner) getRunInContainerCommand(containerID string, cmd []string) (*exec.Cmd, error) {
@@ -133,7 +139,7 @@ func (c DockerContainers) FindContainersByPodFullName(podFullName string) map[st
 	}
 	return containers
 }
-
+// 拿到当前节点的所有容器
 // GetKubeletDockerContainers returns a map of docker containers that we manage. The map key is the docker container ID
 func getKubeletDockerContainers(client DockerInterface) (DockerContainers, error) {
 	result := make(DockerContainers)
@@ -155,7 +161,7 @@ func getKubeletDockerContainers(client DockerInterface) (DockerContainers, error
 
 // ErrNoContainersInPod is returned when there are no running containers for a given pod
 var ErrNoContainersInPod = errors.New("no containers exist for this pod")
-
+// 返回pod的容器的信息(inspect)
 // GetDockerPodInfo returns docker info for all containers in the pod/manifest.
 func getDockerPodInfo(client DockerInterface, podFullName, uuid string) (api.PodInfo, error) {
 	info := api.PodInfo{}
@@ -264,7 +270,10 @@ func parseDockerName(name string) (podFullName, uuid, containerName string, hash
 	}
 	return
 }
-
+/*
+原始的image是repo/image:tag
+返回值是repo/image，tag
+*/
 // Parses image name including a tag and returns image name and tag.
 // TODO: Future Docker versions can parse the tag on daemon side, see
 // https://github.com/dotcloud/docker/issues/6876

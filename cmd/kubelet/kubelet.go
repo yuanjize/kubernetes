@@ -127,12 +127,12 @@ func main() {
 	cfg := kconfig.NewPodConfig(kconfig.PodConfigNotificationSnapshotAndUpdates)
 
 	// define file config source
-	if *config != "" {
+	if *config != "" {  // 从文件监听pod更新
 		kconfig.NewSourceFile(*config, *fileCheckFrequency, cfg.Channel("file"))
 	}
 
 	// define url config source
-	if *manifestURL != "" {
+	if *manifestURL != "" { //  通过url读取manifest，然后更新pod
 		kconfig.NewSourceURL(*manifestURL, *httpCheckFrequency, cfg.Channel("http"))
 	}
 
@@ -155,14 +155,16 @@ func main() {
 		*rootDirectory,
 		*syncFrequency)
 
+	// 添加健康检查器
 	health.AddHealthChecker("exec", health.NewExecHealthChecker(k))
 	health.AddHealthChecker("http", health.NewHTTPHealthChecker(&http.Client{}))
 	health.AddHealthChecker("tcp", &health.TCPHealthChecker{})
 
 	// start the kubelet
+	// 不断地根据pod的变化去改变容器状态
 	go util.Forever(func() { k.Run(cfg.Updates()) }, 0)
 
-	// start the kube let server
+	// start the kube let server 对外提供一些http接口
 	if *enableServer {
 		go util.Forever(func() {
 			kubelet.ListenAndServeKubeletServer(k, cfg.Channel("http"), *address, *port)

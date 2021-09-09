@@ -34,7 +34,9 @@ import (
 	"github.com/golang/glog"
 	"gopkg.in/v1/yaml"
 )
-
+/*
+从文件监听pod变化
+*/
 type SourceFile struct {
 	path    string
 	updates chan<- interface{}
@@ -107,7 +109,7 @@ func extractFromDir(name string) ([]kubelet.Pod, error) {
 	}
 	return pods, nil
 }
-
+// 从文件中读pods
 func extractFromFile(name string) (kubelet.Pod, error) {
 	var pod kubelet.Pod
 

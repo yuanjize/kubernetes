@@ -25,7 +25,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	"github.com/golang/glog"
 )
-
+// 就是在容器里面执行命令
 type execActionHandler struct {
 	kubelet *Kubelet
 }
@@ -34,7 +34,7 @@ func (e *execActionHandler) Run(podFullName, uuid string, container *api.Contain
 	_, err := e.kubelet.RunInContainer(podFullName, uuid, container.Name, handler.Exec.Command)
 	return err
 }
-
+// 执行http命令
 type httpActionHandler struct {
 	kubelet *Kubelet
 	client  httpGetInterface

@@ -22,7 +22,9 @@ import (
 
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
 )
-
+/*
+直接随机选择一个机器，然后调度上去
+*/
 // RandomScheduler chooses machines uniformly at random.
 type RandomScheduler struct {
 	random     *rand.Rand

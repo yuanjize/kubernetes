@@ -99,7 +99,7 @@ func (emptyDir *EmptyDirectory) renameDirectory() (string, error) {
 	}
 	return newPath, nil
 }
-
+// 删除目录
 // TearDown simply deletes everything in the directory.
 func (emptyDir *EmptyDirectory) TearDown() error {
 	tmpDir, err := emptyDir.renameDirectory()
@@ -144,7 +144,7 @@ func CreateVolumeBuilder(volume *api.Volume, podID string, rootDir string) (Buil
 	}
 	return vol, nil
 }
-
+// 创建cleaner
 // CreateVolumeCleaner returns a Cleaner capable of tearing down a volume.
 func CreateVolumeCleaner(kind string, name string, podID string, rootDir string) (Cleaner, error) {
 	switch kind {
@@ -154,7 +154,7 @@ func CreateVolumeCleaner(kind string, name string, podID string, rootDir string)
 		return nil, ErrUnsupportedVolumeType
 	}
 }
-
+// 获取根目录下所有的Volumes,key是poid/volumnName value是清理volumn的Cleaner
 // GetCurrentVolumes examines directory structure to determine volumes that are
 // presently active and mounted. Returns a map of Cleaner types.
 func GetCurrentVolumes(rootDirectory string) map[string]Cleaner {

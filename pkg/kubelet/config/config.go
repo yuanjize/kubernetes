@@ -33,15 +33,17 @@ type PodConfigNotificationMode int
 
 const (
 	// PodConfigNotificationSnapshot delivers the full configuration as a SET whenever
-	// any change occurs.
+	// any change occurs.  发送当前的一个快照
 	PodConfigNotificationSnapshot = iota
 	// PodConfigNotificationSnapshotAndUpdates delivers an UPDATE message whenever pods are
-	// changed, and a SET message if there are any additions or removals.
+	// changed, and a SET message if there are any additions or removals. update单独通知，其他的用一个当前pods的快照当作一个消息通知
 	PodConfigNotificationSnapshotAndUpdates
-	// PodConfigNotificationIncremental delivers ADD, UPDATE, and REMOVE to the update channel.
+	// PodConfigNotificationIncremental delivers ADD, UPDATE, and REMOVE to the update channel. 把add，delete，update分别通知到channel
 	PodConfigNotificationIncremental
 )
-
+/*
+就是一个配置，提供两个对外的接口，一个是给外部让它写，一个是用来给外部来监听更新。它自己本身也是一个内存cache
+*/
 // PodConfig is a configuration mux that merges many sources of pod configuration into a single
 // consistent structure, and then delivers incremental change notifications to listeners
 // in order.
@@ -65,13 +67,13 @@ func NewPodConfig(mode PodConfigNotificationMode) *PodConfig {
 	}
 	return podConfig
 }
-
+// 外部写数据用这个接口
 // Channel creates or returns a config source channel.  The channel
 // only accepts PodUpdates
 func (c *PodConfig) Channel(source string) chan<- interface{} {
 	return c.mux.Channel(source)
 }
-
+// 外部监听更新数据用这个借口
 // Updates returns a channel of updates to the configuration, properly denormalized.
 func (c *PodConfig) Updates() <-chan kubelet.PodUpdate {
 	return c.updates
@@ -89,7 +91,7 @@ func (c *PodConfig) Sync() {
 type podStorage struct {
 	podLock sync.RWMutex
 	// map of source name to pod name to pod reference
-	pods map[string]map[string]*kubelet.Pod
+	pods map[string]map[string]*kubelet.Pod  // 可以认为是pod内存 cache
 	mode PodConfigNotificationMode
 
 	// ensures that updates are delivered in strict order
@@ -109,7 +111,7 @@ func newPodStorage(updates chan<- kubelet.PodUpdate, mode PodConfigNotificationM
 		updates: updates,
 	}
 }
-
+// merge pods，然后发送快照
 // Merge normalizes a set of incoming changes from different sources into a map of all Pods
 // and ensures that redundant changes are filtered out, and then pushes zero or more minimal
 // updates onto the update channel.  Ensures that updates are delivered in order.
@@ -151,7 +153,7 @@ func (s *podStorage) Merge(source string, change interface{}) error {
 
 	return nil
 }
-
+// merge pods
 func (s *podStorage) merge(source string, change interface{}) (adds, updates, deletes *kubelet.PodUpdate) {
 	s.podLock.Lock()
 	defer s.podLock.Unlock()
@@ -167,7 +169,7 @@ func (s *podStorage) merge(source string, change interface{}) (adds, updates, de
 
 	update := change.(kubelet.PodUpdate)
 	switch update.Op {
-	case kubelet.ADD, kubelet.UPDATE:
+	case kubelet.ADD, kubelet.UPDATE: // 要更新的直接更新然后放到updates，新加的先放到pods直接放到adds
 		if update.Op == kubelet.ADD {
 			glog.Infof("Adding new pods from source %s : %v", source, update.Pods)
 		} else {
@@ -206,7 +208,7 @@ func (s *podStorage) merge(source string, change interface{}) (adds, updates, de
 			// this is a no-op
 		}
 
-	case kubelet.SET:
+	case kubelet.SET: // 看起来即使是set操作也是会根据在老得pods中是否存在分为update，add，delete
 		glog.Infof("Setting pods for source %s : %v", source, update)
 		// Clear the old map entries by just creating a new map
 		oldPods := pods
@@ -246,7 +248,7 @@ func (s *podStorage) merge(source string, change interface{}) (adds, updates, de
 	s.pods[source] = pods
 	return adds, updates, deletes
 }
-
+// 过滤掉有问题的pod
 func filterInvalidPods(pods []kubelet.Pod, source string) (filtered []*kubelet.Pod) {
 	names := util.StringSet{}
 	for i := range pods {
@@ -267,7 +269,7 @@ func filterInvalidPods(pods []kubelet.Pod, source string) (filtered []*kubelet.P
 	}
 	return
 }
-
+// 就是把快照发到updates
 // Sync sends a copy of the current state through the update channel.
 func (s *podStorage) Sync() {
 	s.updateLock.Lock()

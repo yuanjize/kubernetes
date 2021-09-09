@@ -25,7 +25,7 @@ import (
 // Pod represents the structure of a pod on the Kubelet, distinct from the apiserver
 // representation of a Pod.
 type Pod struct {
-	Namespace string
+	Namespace string  // 就是source
 	Name      string
 	Manifest  api.ContainerManifest
 }

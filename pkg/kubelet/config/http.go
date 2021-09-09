@@ -30,7 +30,9 @@ import (
 	"github.com/golang/glog"
 	"gopkg.in/v1/yaml"
 )
-
+/*
+ 通过url读取manifest，然后更新pod
+*/
 type SourceURL struct {
 	url     string
 	updates chan<- interface{}

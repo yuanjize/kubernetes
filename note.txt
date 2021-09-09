@@ -66,27 +66,51 @@ Proxy主要工作
 ├── roundrobin.go //  负责需在均衡工作，监听endpoint变化，每次调用NextEndpoint使用roundrobin算法取出来一个endpoint
 
 
-
+kubelet监听（http/file/etcd）pod变化，根据pod的配置来对本节点的容器进行增删
 ├── config
-│├── config.go
-│├── config_test.go
+│├── config.go // kublete和proxy一样有object的cache只不过它cache的是pod，给外部提供接口，外部监测到pod更新会通知这个cache
 │├── doc.go
-│├── etcd.go
-│├── etcd_test.go
-│├── file.go
-│├── file_test.go
-│├── http.go
-│└── http_test.go
+│├── etcd.go  //  从etcd读取manifest监听pod变化，然后通知config.go
+│├── file.go  // 从文件读取manifest监听pod变化，然后通知config.go
+│├── http.go  // 通过url读取manifest监听pod变化，然后通知config.go
 ├── doc.go
-├── docker.go
+├── docker.go  //主要提供了几个接口：1.在指定的容器中执行命令 2.在获取容器信（inspact）3.把image pull下来
 ├── fake_docker_client.go
-├── handlers.go
-├── handlers_test.go
-├── kubelet.go
-├── kubelet_test.go
-├── server.go
-├── server_test.go
+├── handlers.go  // 在容器的生命周期中可以回调一些handler，可以是http调用或者在容器里面执行cmd命令
+├── kubelet.go   // main函数，主要是监听pod更新，每次监听到pod更新就通过dockerclient对容器进行增删以满足pod的新状态
+├── server.go   //对外提供的一些接口，主要可以实现pod更新，也可以对外提供一些信息
 ├── types.go       // kublete和proxy一样有object的cache只不过它cache的是pod，这个文件记录的就是cache用的一些协议对象。（kublete和proxy 的cache接口长得很像，基本都一样。。）
-├── validation.go
-└── validation_test.go
+├── validation.go  // 校验pod是否合法
 
+health
+├── exec.go     // 执行CommandRunner，如果没有返回runner，那么就是健康
+├── health.go   // 一个health checker的kv集合，key就是http/cmd/tcp value就是定义在http.go/tcp.go/exec.go的checker
+├── http.go    // 范围url ，如果url返回的是2xx，那么就说明今健康
+├── tcp.go     // connect 指定的ip:port,如果能连接上就说明健康
+
+volume
+  |-volume.go // 用来创建volume和清除volume （其实就是创建和删除文件夹）
+
+//scheduler主要是监听有变化的pod，然后根据调度算法调度到对应的队列。调度的原理是写一个pod和节点host的bind到etcd中
+scheduler
+├── listers.go
+├── random.go      // 随机找一个节点调度上去
+├── randomfit.go   // 随机找一个端口没有冲突的节点调度上去
+├── roundrobin.go // 轮训调度，每次随机选择一个节点把pod调度上去
+├── scheduler.go  // 调度接口
+
+
+plugin/cmd/scheduler
+└── scheduler.go
+
+0 directories, 1 file
+ ~/go/src/github.com/GoogleCloudPlatform/kubernetes   readv0.2 ●  tree plugin/
+plugin/
+├── cmd
+│ └── scheduler
+│    └── scheduler.go  // main函数
+└── pkg
+    └── scheduler
+        ├── factory
+        │ ├── factory.go  // 核心文件，监听pod和minio变化，并cache到内存中（pod队列）。
+        ├── scheduler.go  // 不断地从pod队列中取得pod，然后根据调度算法调度到对应的队列

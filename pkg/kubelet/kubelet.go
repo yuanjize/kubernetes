@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	docker "github.com/GoogleCloudPlatform/kubernetes/Godeps/_workspace/src/github.com/fsouza/go-dockerclient"
 	"net/http"
 	"path"
 	"strconv"
@@ -53,7 +54,7 @@ type CadvisorInterface interface {
 }
 
 // SyncHandler is an interface implemented by Kubelet, for testability
-type SyncHandler interface {
+type SynchHandler interface {
 	SyncPods([]Pod) error
 }
 
@@ -102,28 +103,28 @@ type httpGetInterface interface {
 
 // Kubelet is the main kubelet implementation.
 type Kubelet struct {
-	hostname       string
-	dockerClient   DockerInterface
-	rootDirectory  string
-	podWorkers     podWorkers
+	hostname       string  // 本机器的hostname
+	dockerClient   DockerInterface  // docker client 访问docker进程用
+	rootDirectory  string           //工作目录
+	podWorkers     podWorkers       //异步任务执行器。暂时不管
 	resyncInterval time.Duration
 
 	// Optional, no events will be sent without it
-	etcdClient tools.EtcdClient
+	etcdClient tools.EtcdClient   // etcd客户端
 	// Optional, no statistics will be available if omitted
-	cadvisorClient CadvisorInterface
+	cadvisorClient CadvisorInterface  // docker统计库
 	// Optional, defaults to simple implementaiton
-	healthChecker health.HealthChecker
+	healthChecker health.HealthChecker  // 一组health checker，可以忽律
 	// Optional, defaults to simple Docker implementation
-	dockerPuller DockerPuller
+	dockerPuller DockerPuller  // 三个功能。1.获取pod对应的所有checker 2.pull image 3.inspect docker
 	// Optional, defaults to /logs/ from /var/log
-	logServer http.Handler
+	logServer http.Handler  // 一个http server，看log用的
 	// Optional, defaults to simple Docker implementation
-	runner ContainerCommandRunner
+	runner ContainerCommandRunner   // 用来在docker中执行命令的
 	// Optional, client for http requests, defaults to empty client
-	httpClient httpGetInterface
+	httpClient httpGetInterface  // 一个http client就是http.Client{}
 }
-
+// 初始化一些工具，然后syncLoop
 // Run starts the kubelet reacting to config updates
 func (kl *Kubelet) Run(updates <-chan PodUpdate) {
 	if kl.logServer == nil {
@@ -135,9 +136,10 @@ func (kl *Kubelet) Run(updates <-chan PodUpdate) {
 	if kl.healthChecker == nil {
 		kl.healthChecker = health.NewHealthChecker()
 	}
+	// 定时/收到pod更新，对本机器的容器进行创建和删除
 	kl.syncLoop(updates, kl)
 }
-
+// 看起来是执行异步人物的
 // Per-pod workers.
 type podWorkers struct {
 	lock sync.Mutex
@@ -197,7 +199,7 @@ func (kl *Kubelet) LogEvent(event *api.Event) error {
 	}
 	return err
 }
-
+// 把环境变量写成k=v的形式
 func makeEnvironmentVariables(container *api.Container) []string {
 	var result []string
 	for _, value := range container.Env {
@@ -205,7 +207,7 @@ func makeEnvironmentVariables(container *api.Container) []string {
 	}
 	return result
 }
-
+// 形式是 val:mount.MountPath
 func makeBinds(pod *Pod, container *api.Container, podVolumes volumeMap) []string {
 	binds := []string{}
 	for _, mount := range container.VolumeMounts {
@@ -221,7 +223,7 @@ func makeBinds(pod *Pod, container *api.Container, podVolumes volumeMap) []strin
 	}
 	return binds
 }
-
+// key是 内部端口/协议 value是 外部端口和主机ip
 func makePortsAndBindings(container *api.Container) (map[docker.Port]struct{}, map[docker.Port][]docker.PortBinding) {
 	exposedPorts := map[docker.Port]struct{}{}
 	portBindings := map[docker.Port][]docker.PortBinding{}
@@ -268,7 +270,7 @@ func milliCPUToShares(milliCPU int) int {
 	}
 	return shares
 }
-
+// 根据配置，在kublete目录中创建用来挂在的目录
 func (kl *Kubelet) mountExternalVolumes(manifest *api.ContainerManifest) (volumeMap, error) {
 	podVolumes := make(volumeMap)
 	for _, vol := range manifest.Volumes {
@@ -294,7 +296,7 @@ func (kl *Kubelet) mountExternalVolumes(manifest *api.ContainerManifest) (volume
 type actionHandler interface {
 	Run(podFullName, uuid string, container *api.Container, handler *api.Handler) error
 }
-
+// 创建handler执行器
 func (kl *Kubelet) newActionHandler(handler *api.Handler) actionHandler {
 	switch {
 	case handler.Exec != nil:
@@ -314,12 +316,12 @@ func (kl *Kubelet) runHandler(podFullName, uuid string, container *api.Container
 	}
 	return actionHandler.Run(podFullName, uuid, container, handler)
 }
-
+// 运行一个容器，并执行生命周期函数
 // Run a single container from a pod. Returns the docker container ID
 func (kl *Kubelet) runContainer(pod *Pod, container *api.Container, podVolumes volumeMap, netMode string) (id DockerID, err error) {
-	envVariables := makeEnvironmentVariables(container)
-	binds := makeBinds(pod, container, podVolumes)
-	exposedPorts, portBindings := makePortsAndBindings(container)
+	envVariables := makeEnvironmentVariables(container)  // 获取环境变量
+	binds := makeBinds(pod, container, podVolumes)  // 获取 vol：mountname
+	exposedPorts, portBindings := makePortsAndBindings(container)  // 所有内部端口，还有外部端口和绑定的主机ip
 
 	opts := docker.CreateContainerOptions{
 		Name: buildDockerName(pod, container),
@@ -343,6 +345,7 @@ func (kl *Kubelet) runContainer(pod *Pod, container *api.Container, podVolumes v
 		Binds:        binds,
 		NetworkMode:  netMode,
 	})
+	// 运行生命周期函数
 	if err == nil && container.Lifecycle != nil && container.Lifecycle.PostStart != nil {
 		handlerErr := kl.runHandler(GetPodFullName(pod), pod.Manifest.UUID, container, container.Lifecycle.PostStart)
 		if handlerErr != nil {
@@ -352,12 +355,12 @@ func (kl *Kubelet) runContainer(pod *Pod, container *api.Container, podVolumes v
 	}
 	return DockerID(dockerContainer.ID), err
 }
-
+// 删除一个docker容器
 // Kill a docker container
 func (kl *Kubelet) killContainer(dockerContainer *docker.APIContainers) error {
 	return kl.killContainerByID(dockerContainer.ID, dockerContainer.Names[0])
 }
-
+//直接调用docker进程的stop函数
 func (kl *Kubelet) killContainerByID(ID, name string) error {
 	glog.Infof("Killing: %s", ID)
 	err := kl.dockerClient.StopContainer(ID, 10)
@@ -384,7 +387,7 @@ const (
 	networkContainerName  = "net"
 	networkContainerImage = "kubernetes/pause:latest"
 )
-
+// 给该pod创建并运行一个网络容器
 // createNetworkContainer starts the network container for a pod. Returns the docker container ID of the newly created container.
 func (kl *Kubelet) createNetworkContainer(pod *Pod) (DockerID, error) {
 	var ports []api.Port
@@ -401,7 +404,7 @@ func (kl *Kubelet) createNetworkContainer(pod *Pod) (DockerID, error) {
 	kl.dockerPuller.Pull(networkContainerImage)
 	return kl.runContainer(pod, container, nil, "")
 }
-
+// 删除pod对应的所有docker
 // Delete all containers in a pod (except the network container) returns the number of containers deleted
 // and an error if one occurs.
 func (kl *Kubelet) deleteAllContainers(pod *Pod, podFullName string, dockerContainers DockerContainers) (int, error) {
@@ -435,12 +438,17 @@ func (kl *Kubelet) deleteAllContainers(pod *Pod, podFullName string, dockerConta
 }
 
 type empty struct{}
-
+/*
+这个看起来就是把该pod多余的容器干掉，有新的配置就启动新的容器
+dockerContainers是当前节点运行的所有的容器
+1.如果有网络容器，那么就拿到网络容器。如果没有那么就删除pod的所有容器，然后创建一个网络容器
+2.杀死多余的容器。添加新的容器
+*/
 func (kl *Kubelet) syncPod(pod *Pod, dockerContainers DockerContainers) error {
 	podFullName := GetPodFullName(pod)
 	uuid := pod.Manifest.UUID
-	containersToKeep := make(map[DockerID]empty)
-	killedContainers := make(map[DockerID]empty)
+	containersToKeep := make(map[DockerID]empty)  // 现在在运行的容器，包括之前就运行的和新的
+	killedContainers := make(map[DockerID]empty)  //被杀死的容器
 
 	// Make sure we have a network container
 	var netID DockerID
@@ -469,7 +477,7 @@ func (kl *Kubelet) syncPod(pod *Pod, dockerContainers DockerContainers) error {
 	}
 	containersToKeep[netID] = empty{}
 
-	podVolumes, err := kl.mountExternalVolumes(&pod.Manifest)
+	podVolumes, err := kl.mountExternalVolumes(&pod.Manifest)  // 创建用来挂载的volumn目录
 	if err != nil {
 		glog.Errorf("Unable to mount volumes for pod %s: (%v) Skipping pod.", podFullName, err)
 		return err
@@ -485,7 +493,7 @@ func (kl *Kubelet) syncPod(pod *Pod, dockerContainers DockerContainers) error {
 	if found && netInfo.NetworkSettings != nil {
 		podState.PodIP = netInfo.NetworkSettings.IPAddress
 	}
-
+    // 如果容器改变就杀死容器，如果没有改变就进行健康检查
 	for _, container := range pod.Manifest.Containers {
 		expectedHash := hashContainer(&container)
 		if dockerContainer, found, hash := dockerContainers.FindPodContainer(podFullName, uuid, container.Name); found {
@@ -567,7 +575,7 @@ func getDesiredVolumes(pods []Pod) map[string]api.Volume {
 	}
 	return desiredVolumes
 }
-
+// 删除没用的Volumes
 // Compares the map of current volumes to the map of desired volumes.
 // If an active volume does not have a respective desired volume, clean it up.
 func (kl *Kubelet) reconcileVolumes(pods []Pod) error {
@@ -587,14 +595,16 @@ func (kl *Kubelet) reconcileVolumes(pods []Pod) error {
 	}
 	return nil
 }
-
+/*
+先获取当前节点的所有容器，然后根据pod算出来我们想要哪些容器，最后把不需要的容器删除
+*/
 // SyncPods synchronizes the configured list of pods (desired state) with the host current state.
 func (kl *Kubelet) SyncPods(pods []Pod) error {
 	glog.Infof("Desired [%s]: %+v", kl.hostname, pods)
 	var err error
 	desiredContainers := make(map[podContainer]empty)
 
-	dockerContainers, err := getKubeletDockerContainers(kl.dockerClient)
+	dockerContainers, err := getKubeletDockerContainers(kl.dockerClient) // 拿到所有的容器
 	if err != nil {
 		glog.Errorf("Error listing containers %#v", dockerContainers)
 		return err
@@ -613,6 +623,7 @@ func (kl *Kubelet) SyncPods(pods []Pod) error {
 		}
 
 		// Run the sync in an async manifest worker.
+		// 根据manifest干掉该pod多余的容器，并创建新的容器
 		kl.podWorkers.Run(podFullName, func() {
 			err := kl.syncPod(pod, dockerContainers)
 			if err != nil {
@@ -622,6 +633,7 @@ func (kl *Kubelet) SyncPods(pods []Pod) error {
 	}
 
 	// Kill any containers we don't need
+	// 干掉不想要的容器
 	existingContainers, err := getKubeletDockerContainers(kl.dockerClient)
 	if err != nil {
 		glog.Errorf("Error listing containers: %v", err)
@@ -660,7 +672,7 @@ func filterHostPortConflicts(pods []Pod) []Pod {
 
 	return filtered
 }
-
+// 定时根据pod的更新创建和删除每个pod所对应的容器
 // syncLoop is the main loop for processing changes. It watches for changes from
 // four channels (file, etcd, server, and http) and creates a union of them. For
 // any new change seen, will run a sync against desired state and running state. If
@@ -690,7 +702,7 @@ func (kl *Kubelet) syncLoop(updates <-chan PodUpdate, handler SyncHandler) {
 				continue
 			}
 		}
-
+        // 定时根据pod的更新创建和删除每个pod所对应的容器
 		err := handler.SyncPods(pods)
 		if err != nil {
 			glog.Errorf("Couldn't sync containers : %v", err)
@@ -718,7 +730,7 @@ func (kl *Kubelet) statsFromContainerPath(containerPath string, req *info.Contai
 	}
 	return cinfo, nil
 }
-
+// 获取pod所有容器的inspect
 // GetPodInfo returns information from Docker about the containers in a pod
 func (kl *Kubelet) GetPodInfo(podFullName, uuid string) (api.PodInfo, error) {
 	return getDockerPodInfo(kl.dockerClient, podFullName, uuid)
@@ -748,7 +760,7 @@ func (kl *Kubelet) GetRootInfo(req *info.ContainerInfoRequest) (*info.ContainerI
 func (kl *Kubelet) GetMachineInfo() (*info.MachineInfo, error) {
 	return kl.cadvisorClient.MachineInfo()
 }
-
+// 对容器进行健康检查
 func (kl *Kubelet) healthy(podFullName string, currentState api.PodState, container api.Container, dockerContainer *docker.APIContainers) (health.Status, error) {
 	// Give the container 60 seconds to start up.
 	if container.LivenessProbe == nil {
@@ -768,7 +780,7 @@ func (kl *Kubelet) ServeLogs(w http.ResponseWriter, req *http.Request) {
 	// TODO: whitelist logs we are willing to serve
 	kl.logServer.ServeHTTP(w, req)
 }
-
+// 在容器里面执行cmd命令
 // Run a command in a container, returns the combined stdout, stderr as an array of bytes
 func (kl *Kubelet) RunInContainer(podFullName, uuid, container string, cmd []string) ([]byte, error) {
 	if kl.runner == nil {

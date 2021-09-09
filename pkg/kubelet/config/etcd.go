@@ -32,7 +32,9 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/watch"
 	"github.com/golang/glog"
 )
-
+/*
+通过etcd监听pod变化
+*/
 func EtcdKeyForHost(hostname string) string {
 	return path.Join("/", "registry", "hosts", hostname, "kubelet")
 }

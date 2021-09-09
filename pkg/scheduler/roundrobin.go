@@ -19,7 +19,9 @@ package scheduler
 import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
 )
-
+/*
+round robin调度
+*/
 // RoundRobinScheduler chooses machines in order.
 type RoundRobinScheduler struct {
 	currentIndex int

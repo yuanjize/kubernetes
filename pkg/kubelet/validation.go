@@ -21,7 +21,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/validation"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 )
-
+// 校验pod是否合法
 func ValidatePod(pod *Pod) (errors []error) {
 	if !util.IsDNSSubdomain(pod.Name) {
 		errors = append(errors, apierrs.NewFieldInvalid("name", pod.Name))

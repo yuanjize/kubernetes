@@ -24,7 +24,9 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/labels"
 )
-
+/*
+随机调度，从所有机器里选择出来一个端口没有冲突的，然后调度过去
+*/
 // RandomFitScheduler is a Scheduler which schedules a Pod on a random machine which matches its requirement.
 type RandomFitScheduler struct {
 	podLister  PodLister
@@ -49,7 +51,7 @@ func (s *RandomFitScheduler) containsPort(pod api.Pod, port api.Port) bool {
 	}
 	return false
 }
-
+// 过滤掉端口冲突的，然后随机选择一个机器
 // Schedule schedules a pod on a random machine which matches its requirement.
 func (s *RandomFitScheduler) Schedule(pod api.Pod, minionLister MinionLister) (string, error) {
 	machines, err := minionLister.List()
@@ -66,6 +68,7 @@ func (s *RandomFitScheduler) Schedule(pod api.Pod, minionLister MinionLister) (s
 		host := scheduledPod.CurrentState.Host
 		machineToPods[host] = append(machineToPods[host], scheduledPod)
 	}
+	// 过滤掉端口冲突的
 	var machineOptions []string
 	for _, machine := range machines {
 		podFits := true
