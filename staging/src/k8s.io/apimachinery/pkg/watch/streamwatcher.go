@@ -27,7 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/net"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 )
-
+// 可从数据源decode出数据Event
 // Decoder allows StreamWatcher to watch any stream for which a Decoder can be written.
 type Decoder interface {
 	// Decode should return the type of event, the decoded object, or an error.
@@ -40,14 +40,14 @@ type Decoder interface {
 	// outstanding call to Decode() to return with an error of some sort.
 	Close()
 }
-
+// 把error封装成object对象
 // Reporter hides the details of how an error is turned into a runtime.Object for
 // reporting on a watch stream since this package may not import a higher level report.
 type Reporter interface {
 	// AsObject must convert err into a valid runtime.Object for the watch stream.
 	AsObject(err error) runtime.Object
 }
-
+// StreamWatcher创建的时候会启动一个线程，每次它的decoder成功的时候都会把 action和object封装成Event然后通过chan发送给外面
 // StreamWatcher turns any stream for which you can write a Decoder interface
 // into a watch.Interface.
 type StreamWatcher struct {

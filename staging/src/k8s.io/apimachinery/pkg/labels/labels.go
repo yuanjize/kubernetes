@@ -89,7 +89,7 @@ func FormatLabels(labelMap map[string]string) string {
 	}
 	return l
 }
-
+// 检查lable是否有冲突
 // Conflicts takes 2 maps and returns true if there a key match between
 // the maps but the value doesn't match, and returns false in other cases
 func Conflicts(labels1, labels2 Set) bool {
@@ -110,7 +110,7 @@ func Conflicts(labels1, labels2 Set) bool {
 
 	return false
 }
-
+// 所有的标签放到一个map里面
 // Merge combines given maps, and does not check for any conflicts
 // between the maps. In case of conflicts, second map (labels2) wins
 func Merge(labels1, labels2 Set) Set {
@@ -124,7 +124,7 @@ func Merge(labels1, labels2 Set) Set {
 	}
 	return mergedMap
 }
-
+//两个标签集合是否完全一样
 // Equals returns true if the given maps are equal
 func Equals(labels1, labels2 Set) bool {
 	if len(labels1) != len(labels2) {
@@ -142,7 +142,7 @@ func Equals(labels1, labels2 Set) bool {
 	}
 	return true
 }
-
+// 从字符串parse出来labels结构体
 // ConvertSelectorToLabelsMap converts selector string to labels map
 // and validates keys and values
 func ConvertSelectorToLabelsMap(selector string, opts ...field.PathOption) (Set, error) {

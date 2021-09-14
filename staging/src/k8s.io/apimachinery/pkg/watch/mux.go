@@ -28,8 +28,8 @@ import (
 type FullChannelBehavior int
 
 const (
-	WaitIfChannelFull FullChannelBehavior = iota
-	DropIfChannelFull
+	WaitIfChannelFull FullChannelBehavior = iota   // 如果分发给broadcasterWatcher的时候，他的channel已经满了，那么阻塞，直到分发完成
+	DropIfChannelFull  // 如果分发给broadcasterWatcher的时候，他的channel已经满了，那么就不给这个broadcasterWatcher分发了
 )
 
 // Buffer the incoming queue a little bit even though it should rarely ever accumulate
@@ -105,7 +105,7 @@ func (obj functionFakeRuntimeObject) DeepCopyObject() runtime.Object {
 	// funcs are immutable. Hence, just return the original func.
 	return obj
 }
-
+// 阻塞这个操作，直到f函数被执行(也就是loop真正从chan里面拿到了这个消息)
 // Execute f, blocking the incoming queue (and waiting for it to drain first).
 // The purpose of this terrible hack is so that watchers added after an event
 // won't ever see that event, and will always see any event after they are
@@ -127,7 +127,7 @@ func (m *Broadcaster) blockQueue(f func()) {
 	}
 	wg.Wait()
 }
-
+// 添加一个新的watcher到集合中
 // Watch adds a new watcher to the list and returns an Interface for it.
 // Note: new watchers will only receive new events. They won't get an entire history
 // of previous events. It will block until the watcher is actually added to the
@@ -152,7 +152,7 @@ func (m *Broadcaster) Watch() Interface {
 	}
 	return w
 }
-
+// watch的时候会先写一些event过去
 // WatchWithPrefix adds a new watcher to the list and returns an Interface for it. It sends
 // queuedEvents down the new watch before beginning to send ordinary events from Broadcaster.
 // The returned watch will have a queue length that is at least large enough to accommodate
@@ -185,7 +185,7 @@ func (m *Broadcaster) WatchWithPrefix(queuedEvents []Event) Interface {
 	}
 	return w
 }
-
+// 关闭指定的子watcher
 // stopWatching stops the given watcher and removes it from the list.
 func (m *Broadcaster) stopWatching(id int64) {
 	m.blockQueue(func() {
@@ -198,7 +198,7 @@ func (m *Broadcaster) stopWatching(id int64) {
 		close(w.result)
 	})
 }
-
+// 关闭watch map的所有watcher，然后重新创建一个map
 // closeAll disconnects all watchers (presumably in response to a Shutdown call).
 func (m *Broadcaster) closeAll() {
 	for _, w := range m.watchers {
@@ -208,12 +208,12 @@ func (m *Broadcaster) closeAll() {
 	// by stopWatching to avoid double-closing the channel.
 	m.watchers = map[int64]*broadcasterWatcher{}
 }
-
+// 阻塞发生Event
 // Action distributes the given event among all watchers.
 func (m *Broadcaster) Action(action EventType, obj runtime.Object) {
 	m.incoming <- Event{action, obj}
 }
-
+// 非阻塞发生Event，如果写不进去就直接drop。返回true的时候代表成功写进去了
 // Action distributes the given event among all watchers, or drops it on the floor
 // if too many incoming actions are queued up.  Returns true if the action was sent,
 // false if dropped.
@@ -239,22 +239,22 @@ func (m *Broadcaster) Shutdown() {
 	})
 	m.distributing.Wait()
 }
-
+// 虚幻接受消息，然后发送给所有的子watcher
 // loop receives from m.incoming and distributes to all watchers.
 func (m *Broadcaster) loop() {
 	// Deliberately not catching crashes here. Yes, bring down the process if there's a
 	// bug in watch.Broadcaster.
-	for event := range m.incoming {
+	for event := range m.incoming {  // 如果是internalRunFunctionMarker类型，把么直接执行这个函数
 		if event.Type == internalRunFunctionMarker {
 			event.Object.(functionFakeRuntimeObject)()
 			continue
 		}
-		m.distribute(event)
+		m.distribute(event)  // 消息分发给多个watcher
 	}
-	m.closeAll()
+	m.closeAll()  // 关闭所有watcher
 	m.distributing.Done()
 }
-
+// 一个消息分发给多个watcher
 // distribute sends event to all watchers. Blocking.
 func (m *Broadcaster) distribute(event Event) {
 	if m.fullChannelBehavior == DropIfChannelFull {

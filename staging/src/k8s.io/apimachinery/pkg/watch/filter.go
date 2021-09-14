@@ -19,7 +19,11 @@ package watch
 import (
 	"sync"
 )
+/*
+filteredWatch就是watcher的包装类，只有经过过滤的Event才能被外部看到
+Recorder是基于filteredWatch实现的一个wather，就是给filteredWatch传了一个过滤函数，函数功能是记录所有的Event
 
+*/
 // FilterFunc should take an event, possibly modify it in some way, and return
 // the modified event. If the event should be ignored, then return keep=false.
 type FilterFunc func(in Event) (out Event, keep bool)

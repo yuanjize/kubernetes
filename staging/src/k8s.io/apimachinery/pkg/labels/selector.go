@@ -73,7 +73,7 @@ type Selector interface {
 	// requires.
 	RequiresExactMatch(label string) (value string, found bool)
 }
-
+// 啥都匹配的表达式
 // Everything returns a selector that matches all labels.
 func Everything() Selector {
 	return internalSelector{}
@@ -90,7 +90,7 @@ func (n nothingSelector) DeepCopySelector() Selector         { return n }
 func (n nothingSelector) RequiresExactMatch(label string) (value string, found bool) {
 	return "", false
 }
-
+// 啥都不匹配的表达式
 // Nothing returns a selector that matches no labels
 func Nothing() Selector {
 	return nothingSelector{}
@@ -102,7 +102,7 @@ func NewSelector() Selector {
 }
 
 type internalSelector []Requirement
-
+// 深拷贝所有的Requirement，也是对internalSelector的深拷贝
 func (s internalSelector) DeepCopy() internalSelector {
 	if s == nil {
 		return nil
@@ -113,11 +113,11 @@ func (s internalSelector) DeepCopy() internalSelector {
 	}
 	return result
 }
-
+// 深拷贝所有的Requirement，也是对internalSelector的深拷贝
 func (s internalSelector) DeepCopySelector() Selector {
 	return s.DeepCopy()
 }
-
+// 根据Requirement的key排序
 // ByKey sorts requirements by key to obtain deterministic parser
 type ByKey []Requirement
 
@@ -132,13 +132,14 @@ func (a ByKey) Less(i, j int) bool { return a[i].key < a[j].key }
 // Requirement implements both set based match and exact match
 // Requirement should be initialized via NewRequirement constructor for creating a valid Requirement.
 // +k8s:deepcopy-gen=true
+// 一个parse出来的label选择器表达式，主要有个match函数用来判断labels集合是否符合表达式
 type Requirement struct {
-	key      string
-	operator selection.Operator
+	key      string  // label名称
+	operator selection.Operator  // 操作，比如大于小于等于啥的
 	// In huge majority of cases we have at most one value here.
 	// It is generally faster to operate on a single-element slice
 	// than on a single-element map, so we have a slice here.
-	strValues []string
+	strValues []string  // label的值范围
 }
 
 // NewRequirement is the constructor for a Requirement.
@@ -153,6 +154,7 @@ type Requirement struct {
 //
 // The empty string is a valid value in the input values set.
 // Returned error, if not nil, is guaranteed to be an aggregated field.ErrorList
+// 简单的对数据校验，然后创建Requirement结构体
 func NewRequirement(key string, op selection.Operator, vals []string, opts ...field.PathOption) (*Requirement, error) {
 	var allErrs field.ErrorList
 	path := field.ToPath(opts...)
@@ -194,7 +196,7 @@ func NewRequirement(key string, op selection.Operator, vals []string, opts ...fi
 	}
 	return &Requirement{key: key, operator: op, strValues: vals}, allErrs.ToAggregate()
 }
-
+// 是否包含value这个值
 func (r *Requirement) hasValue(value string) bool {
 	for i := range r.strValues {
 		if r.strValues[i] == value {
@@ -215,6 +217,7 @@ func (r *Requirement) hasValue(value string) bool {
 //     Requirement's key.
 // (5) The operator is GreaterThanOperator or LessThanOperator, and Labels has
 //     the Requirement's key and the corresponding value satisfies mathematical inequality.
+// 判断ls是否满足Requirement的规则
 func (r *Requirement) Matches(ls Labels) bool {
 	switch r.operator {
 	case selection.In, selection.Equals, selection.DoubleEquals:
@@ -364,7 +367,7 @@ func safeSort(in []string) []string {
 	sort.Strings(out)
 	return out
 }
-
+// 就是append切片（Requirement）的操作
 // Add adds requirements to the selector. It copies the current selector returning a new one
 func (s internalSelector) Add(reqs ...Requirement) Selector {
 	ret := make(internalSelector, 0, len(s)+len(reqs))
@@ -373,7 +376,7 @@ func (s internalSelector) Add(reqs ...Requirement) Selector {
 	sort.Sort(ByKey(ret))
 	return ret
 }
-
+// 匹配所有的Requirement返回true（就是撇披索哟偶的表达式）
 // Matches for a internalSelector returns true if all
 // its Requirements match the input Labels. If any
 // Requirement does not match, false is returned.
@@ -397,7 +400,7 @@ func (s internalSelector) String() string {
 	}
 	return strings.Join(reqs, ",")
 }
-
+// 取到label对应的精确匹配的值，只有精确匹配才能取到该值
 // RequiresExactMatch introspects whether a given selector requires a single specific field
 // to be set, and if so returns the value it requires.
 func (s internalSelector) RequiresExactMatch(label string) (value string, found bool) {
@@ -929,7 +932,7 @@ func ValidatedSelectorFromSet(ls Set) (Selector, error) {
 	sort.Sort(ByKey(requirements))
 	return internalSelector(requirements), nil
 }
-
+// 根据labels算出来一个可以精确匹配的selector
 // SelectorFromValidatedSet returns a Selector which will match exactly the given Set.
 // A nil and empty Sets are considered equivalent to Everything().
 // It assumes that Set is already validated and doesn't do any validation.

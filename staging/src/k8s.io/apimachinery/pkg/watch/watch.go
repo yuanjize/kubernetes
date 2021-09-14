@@ -24,7 +24,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 )
-
+// watch接口
 // Interface can be implemented by anything that knows how to watch and report changes.
 type Interface interface {
 	// Stops watching. Will close the channel returned by ResultChan(). Releases
