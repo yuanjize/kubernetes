@@ -22,7 +22,13 @@ import (
 	"encoding/json"
 	"io"
 )
-
+/*
+一个frame就是：先写入4字节的数据长度，然后写入数据
+提供了三个接口:
+  1.写入一个frame
+  2.读取一个frame
+  3.从decoder读一个完整的json
+*/
 type lengthDelimitedFrameWriter struct {
 	w io.Writer
 	h [4]byte
@@ -31,7 +37,7 @@ type lengthDelimitedFrameWriter struct {
 func NewLengthDelimitedFrameWriter(w io.Writer) io.Writer {
 	return &lengthDelimitedFrameWriter{w: w}
 }
-
+// 先写进去data的长度，然后写data
 // Write writes a single frame to the nested writer, prepending it with the length in
 // in bytes of data (as a 4 byte, bigendian uint32).
 func (w *lengthDelimitedFrameWriter) Write(data []byte) (int, error) {
@@ -48,7 +54,7 @@ func (w *lengthDelimitedFrameWriter) Write(data []byte) (int, error) {
 
 type lengthDelimitedFrameReader struct {
 	r         io.ReadCloser
-	remaining int
+	remaining int  // 还剩下多少数据没有读
 }
 
 // NewLengthDelimitedFrameReader returns an io.Reader that will decode length-prefixed
@@ -66,7 +72,7 @@ type lengthDelimitedFrameReader struct {
 func NewLengthDelimitedFrameReader(r io.ReadCloser) io.ReadCloser {
 	return &lengthDelimitedFrameReader{r: r}
 }
-
+// 读取一frame数据
 // Read attempts to read an entire frame into data. If that is not possible, io.ErrShortBuffer
 // is returned and subsequent calls will attempt to read the last frame. A frame is complete when
 // err is nil.

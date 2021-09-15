@@ -93,13 +93,13 @@ func (agg aggregate) Error() string {
 	}
 	return "[" + result + "]"
 }
-
+// target是否i在aggregate链路上
 func (agg aggregate) Is(target error) bool {
 	return agg.visit(func(err error) bool {
 		return errors.Is(err, target)
 	})
 }
-
+// 遍历每个error，都传递到f函数中
 func (agg aggregate) visit(f func(err error) bool) bool {
 	for _, err := range agg {
 		switch err := err.(type) {
@@ -138,6 +138,7 @@ type Matcher func(error) bool
 //
 // This can be used, for example, to remove known-OK errors (such as io.EOF or
 // os.PathNotFound) from a list of errors.
+// 根据fns来过滤error
 func FilterOut(err error, fns ...Matcher) error {
 	if err == nil {
 		return nil
@@ -175,7 +176,7 @@ func filterErrors(list []error, fns ...Matcher) []error {
 	}
 	return result
 }
-
+// 把Aggregate放平。也就是内嵌的子error也放到当前error数组里面
 // Flatten takes an Aggregate, which may hold other Aggregates in arbitrary
 // nesting, and flattens them all into a single Aggregate, recursively.
 func Flatten(agg Aggregate) Aggregate {
@@ -197,7 +198,7 @@ func Flatten(agg Aggregate) Aggregate {
 	}
 	return NewAggregate(result)
 }
-
+// errormsg是每个error出现几次
 // CreateAggregateFromMessageCountMap converts MessageCountMap Aggregate
 func CreateAggregateFromMessageCountMap(m MessageCountMap) Aggregate {
 	if m == nil {
@@ -213,7 +214,7 @@ func CreateAggregateFromMessageCountMap(m MessageCountMap) Aggregate {
 	}
 	return NewAggregate(result)
 }
-
+// 返回error数组中的第一个error
 // Reduce will return err or, if err is an Aggregate and only has one item,
 // the first item in the aggregate.
 func Reduce(err error) error {
@@ -227,7 +228,7 @@ func Reduce(err error) error {
 	}
 	return err
 }
-
+// 开启多个线程同时执行funcs，并发所得error合并到一起
 // AggregateGoroutines runs the provided functions in parallel, stuffing all
 // non-nil errors into the returned Aggregate.
 // Returns nil if all the functions complete successfully.

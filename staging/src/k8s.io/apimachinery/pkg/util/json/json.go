@@ -37,7 +37,7 @@ func Marshal(v interface{}) ([]byte, error) {
 
 // limit recursive depth to prevent stack overflow errors
 const maxDepth = 10000
-
+// 看起来就是转换的时候把数字尽量转换为int而不是float
 // Unmarshal unmarshals the given data
 // If v is a *map[string]interface{}, *[]interface{}, or *interface{} numbers
 // are converted to int64 or float64

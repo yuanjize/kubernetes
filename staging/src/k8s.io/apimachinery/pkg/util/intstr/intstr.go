@@ -137,7 +137,7 @@ func ValueOrDefault(intOrPercent *IntOrString, defaultValue IntOrString) *IntOrS
 	}
 	return intOrPercent
 }
-
+// 和下面函数一样。根据intOrPercent中的百分比和total算出实际的数值（intOrPercent*int）
 // GetScaledValueFromIntOrPercent is meant to replace GetValueFromIntOrPercent.
 // This method returns a scaled value from an IntOrString type. If the IntOrString
 // is a percentage string value it's treated as a percentage and scaled appropriately
@@ -160,7 +160,7 @@ func GetScaledValueFromIntOrPercent(intOrPercent *IntOrString, total int, roundU
 	}
 	return value, nil
 }
-
+// 比如intOrPercent写的是5%。那么返回的说只就是0.05*total，roundUp用来判断是否向上取整
 // GetValueFromIntOrPercent was deprecated in favor of
 // GetScaledValueFromIntOrPercent. This method was treating all int as a numeric value and all
 // strings with or without a percent symbol as a percentage value.
@@ -182,7 +182,7 @@ func GetValueFromIntOrPercent(intOrPercent *IntOrString, total int, roundUp bool
 	}
 	return value, nil
 }
-
+// 那么拿到当前值的百分比部分，如果是1那么就返回的1，如果是“1%”那么就干掉百分号然后返回1
 // getIntOrPercentValue is a legacy function and only meant to be called by GetValueFromIntOrPercent
 // For a more correct implementation call getIntOrPercentSafely
 func getIntOrPercentValue(intOrStr *IntOrString) (int, bool, error) {
@@ -199,7 +199,7 @@ func getIntOrPercentValue(intOrStr *IntOrString) (int, bool, error) {
 	}
 	return 0, false, fmt.Errorf("invalid type: neither int nor percentage")
 }
-
+// 暂时认为和上面函数作用一样，都是获得百分比部分
 func getIntOrPercentValueSafely(intOrStr *IntOrString) (int, bool, error) {
 	switch intOrStr.Type {
 	case Int:

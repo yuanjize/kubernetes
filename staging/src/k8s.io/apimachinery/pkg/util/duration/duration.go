@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"time"
 )
-
+// 显示时间最大单位，比如5小时30分钟20秒，那么就显示五小时
 // ShortHumanDuration returns a succint representation of the provided duration
 // with limited precision for consumption by humans.
 func ShortHumanDuration(d time.Duration) string {
@@ -41,7 +41,7 @@ func ShortHumanDuration(d time.Duration) string {
 	}
 	return fmt.Sprintf("%dy", int(d.Hours()/24/365))
 }
-
+// 显示稍微详细的时间
 // HumanDuration returns a succint representation of the provided duration
 // with limited precision for consumption by humans. It provides ~2-3 significant
 // figures of duration.
