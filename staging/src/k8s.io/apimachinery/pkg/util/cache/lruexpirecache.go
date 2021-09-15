@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 )
-
+// 就是个使用LUR的cache
 // Clock defines an interface for obtaining the current time
 type Clock interface {
 	Now() time.Time

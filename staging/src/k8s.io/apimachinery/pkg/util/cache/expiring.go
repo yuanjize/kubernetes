@@ -23,7 +23,13 @@ import (
 
 	utilclock "k8s.io/apimachinery/pkg/util/clock"
 )
-
+/*
+Expiring就是一个有过期功能的cache：
+  1. set的时候会调用gc干掉所有过期的cache
+  2。get的时候不会返回过期的数据
+回收过期数据：
+  使用最小堆（堆顶部是过期时间最近的），每次pop出来一个，直到pop出来的数据没有过期
+*/
 // NewExpiring returns an initialized expiring cache.
 func NewExpiring() *Expiring {
 	return NewExpiringWithClock(utilclock.RealClock{})
@@ -155,7 +161,7 @@ func (c *Expiring) gc(now time.Time) {
 		c.del(cleanup.key, cleanup.generation)
 	}
 }
-
+// 一个最小堆
 type expiringHeapEntry struct {
 	key        interface{}
 	expiry     time.Time

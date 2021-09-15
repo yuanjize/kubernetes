@@ -26,7 +26,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/google/go-cmp/cmp"
 )
-
+// 就是弄出来人类刻度的字符串diff
 // StringDiff diffs a and b and returns a human readable diff.
 func StringDiff(a, b string) string {
 	ba := []byte(a)
@@ -46,11 +46,12 @@ func StringDiff(a, b string) string {
 	out = append(out, []byte("\n\n")...)
 	return string(out)
 }
-
+// diff两个对象不同的字段
 func legacyDiff(a, b interface{}) string {
 	return cmp.Diff(a, b)
 }
 
+// diff两个对象不同的字段
 // ObjectDiff prints the diff of two go objects and fails if the objects
 // contain unhandled unexported fields.
 // DEPRECATED: use github.com/google/go-cmp/cmp.Diff
