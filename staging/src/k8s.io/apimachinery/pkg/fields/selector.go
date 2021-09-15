@@ -365,7 +365,7 @@ func ParseSelector(selector string) (Selector, error) {
 			return lhs, rhs, nil
 		})
 }
-
+// 从字符串parse出selector
 // ParseAndTransformSelector parses the selector and runs them through the given TransformFunc.
 func ParseAndTransformSelector(selector string, fn TransformFunc) (Selector, error) {
 	return parseSelector(selector, fn)
@@ -373,7 +373,7 @@ func ParseAndTransformSelector(selector string, fn TransformFunc) (Selector, err
 
 // TransformFunc transforms selectors.
 type TransformFunc func(field, value string) (newField, newValue string, err error)
-
+// 根据逗号分成几段
 // splitTerms returns the comma-separated terms contained in the given fieldSelector.
 // Backslash-escaped commas are treated as data instead of delimiters, and are included in the returned terms, with the leading backslash preserved.
 func splitTerms(fieldSelector string) []string {
@@ -411,7 +411,7 @@ const (
 // doubleEqualOperator and equal are equivalent, but doubleEqualOperator is checked first
 // to avoid leaving a leading = character on the rhs value.
 var termOperators = []string{notEqualOperator, doubleEqualOperator, equalOperator}
-
+// 把a=b 分为 a = b 三部分
 // splitTerm returns the lhs, operator, and rhs parsed from the given term, along with an indicator of whether the parse was successful.
 // no escaping of special characters is supported in the lhs value, so the first occurrence of a recognized operator is used as the split point.
 // the literal rhs is returned, and the caller is responsible for applying any desired unescaping.
@@ -426,7 +426,7 @@ func splitTerm(term string) (lhs, op, rhs string, ok bool) {
 	}
 	return "", "", "", false
 }
-
+// 从字符串中parse出来 selector集合
 func parseSelector(selector string, fn TransformFunc) (Selector, error) {
 	parts := splitTerms(selector)
 	sort.StringSlice(parts).Sort()
