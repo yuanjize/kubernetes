@@ -28,6 +28,12 @@ import (
 // Create a 3-way merge patch based-on JSON merge patch.
 // Calculate addition-and-change patch between current and modified.
 // Calculate deletion patch between original and modified.
+
+/*
+ 1.根据current和 modified 算出来一个addAndChange patch，然后删除该patch中的null值
+ 2.根据origin和 modified 算出来一个delette patch，然后删除该patch中的非null值只留下null值
+ 3.判断addAndChange patch和delette patch是否有冲突，如果没有冲突就合并这两个patch并通过fns过滤后返回
+ */
 func CreateThreeWayJSONMergePatch(original, modified, current []byte, fns ...mergepatch.PreconditionFunc) ([]byte, error) {
 	if len(original) == 0 {
 		original = []byte(`{}`)
@@ -58,7 +64,7 @@ func CreateThreeWayJSONMergePatch(original, modified, current []byte, fns ...mer
 	if err != nil {
 		return nil, err
 	}
-
+    // 对比两个jsonpatch是否冲突,如果l和r有相同的key，但是key对应的value的类型或者数值不一样，这个就算冲突
 	hasConflicts, err := mergepatch.HasConflicts(addAndChangePatchObj, deletePatchObj)
 	if err != nil {
 		return nil, err
@@ -66,6 +72,8 @@ func CreateThreeWayJSONMergePatch(original, modified, current []byte, fns ...mer
 	if hasConflicts {
 		return nil, mergepatch.NewErrConflict(mergepatch.ToYAMLOrError(addAndChangePatchObj), mergepatch.ToYAMLOrError(deletePatchObj))
 	}
+
+	// patch合并
 	patch, err := jsonpatch.MergePatch(deletePatch, addAndChangePatch)
 	if err != nil {
 		return nil, err
@@ -86,7 +94,7 @@ func CreateThreeWayJSONMergePatch(original, modified, current []byte, fns ...mer
 
 	return patch, nil
 }
-
+// 是keepOrDeleteNullInObj的包装函数
 // keepOrDeleteNullInJsonPatch takes a json-encoded byte array and a boolean.
 // It returns a filtered object and its corresponding json-encoded byte array.
 // It is a wrapper of func keepOrDeleteNullInObj
@@ -103,7 +111,7 @@ func keepOrDeleteNullInJsonPatch(patch []byte, keepNull bool) ([]byte, map[strin
 	o, err := json.Marshal(filteredMap)
 	return o, filteredMap, err
 }
-
+// keepNull是true的时候只保留m中数值的null的key，否则只保留m中非空的key
 // keepOrDeleteNullInObj will keep only the null value and delete all the others,
 // if keepNull is true. Otherwise, it will delete all the null value and keep the others.
 func keepOrDeleteNullInObj(m map[string]interface{}, keepNull bool) (map[string]interface{}, error) {
@@ -148,7 +156,7 @@ func keepOrDeleteNullInObj(m map[string]interface{}, keepNull bool) (map[string]
 	}
 	return filteredMap, nil
 }
-
+// patch如果满足fns，返回false
 func meetPreconditions(patchObj map[string]interface{}, fns ...mergepatch.PreconditionFunc) (bool, error) {
 	// Apply the preconditions to the patch, and return an error if any of them fail.
 	for _, fn := range fns {

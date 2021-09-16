@@ -26,7 +26,8 @@ import (
 
 // PreconditionFunc asserts that an incompatible change is not present within a patch.
 type PreconditionFunc func(interface{}) bool
-
+// 输入一个key，创建一个函数，函数接收到patch之后查看该key是否在patch中，在的话就返回false
+// 该函数就是判断json中的某个字段是否没有改变
 // RequireKeyUnchanged returns a precondition function that fails if the provided key
 // is present in the patch (indicating that its value has changed).
 func RequireKeyUnchanged(key string) PreconditionFunc {
@@ -41,7 +42,7 @@ func RequireKeyUnchanged(key string) PreconditionFunc {
 		return !ok
 	}
 }
-
+//和上面函数功能一样，只是先取出来一个叫metadata的map，然后判断该map中的key
 // RequireMetadataKeyUnchanged creates a precondition function that fails
 // if the metadata.key is present in the patch (indicating its value
 // has changed).
@@ -89,6 +90,7 @@ func toYAML(v interface{}) (string, error) {
 //
 // NOTE: Numbers with different types (e.g. int(0) vs int64(0)) will be detected as conflicts.
 //       Make sure the unmarshaling of left and right are consistent (e.g. use the same library).
+// 对比两个jsonpatch是否冲突,如果l和r有相同的key，但是key对应的value的类型或者数值不一样，这个就算冲突
 func HasConflicts(left, right interface{}) (bool, error) {
 	switch typedLeft := left.(type) {
 	case map[string]interface{}:

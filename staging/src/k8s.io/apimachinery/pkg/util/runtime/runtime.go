@@ -25,7 +25,9 @@ import (
 
 	"k8s.io/klog/v2"
 )
-
+/*
+定义一些处理crash的方法，默认是把panic打log然后再抛出去
+*/
 var (
 	// ReallyCrash controls the behavior of HandleCrash and now defaults
 	// true. It's still exposed so components can optionally set to false
@@ -56,7 +58,7 @@ func HandleCrash(additionalHandlers ...func(interface{})) {
 		}
 	}
 }
-
+// 把堆栈写log
 // logPanic logs the caller tree when a panic occurs (except in the special case of http.ErrAbortHandler).
 func logPanic(r interface{}) {
 	if r == http.ErrAbortHandler {
@@ -134,7 +136,7 @@ func (r *rudimentaryErrorBackoff) OnError(error) {
 	}
 	r.lastErrorTime = time.Now()
 }
-
+// 返回调用该函数的函数名
 // GetCaller returns the caller of the function that calls it.
 func GetCaller() string {
 	var pc [1]uintptr
@@ -145,7 +147,7 @@ func GetCaller() string {
 	}
 	return f.Name()
 }
-
+// 从panic中recover并打印堆栈和error
 // RecoverFromPanic replaces the specified error with an error containing the
 // original error, and  the call tree when a panic occurs. This enables error
 // handlers to handle errors and panics the same way.

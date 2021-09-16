@@ -17,6 +17,8 @@ limitations under the License.
 package naming
 
 import (
+	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -47,7 +49,7 @@ func TestGetNameFromCallsite(t *testing.T) {
 			expected:        "????",
 		},
 	}
-
+    fmt.Println(runtime.Caller(1))
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			actual := GetNameFromCallsite(tc.ignoredPackages...)

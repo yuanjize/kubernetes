@@ -23,7 +23,15 @@ import (
 	"strconv"
 	"strings"
 )
-
+/*
+定义了Version代表解析之后的版本
+一个版本parser
+1.0.0-alpha+001
+	components   //1.0.0
+	preRelease    string // alpha
+	buildMetadata string //001
+还有一些版本的比较函数
+*/
 // Version is an opaque representation of a version number
 type Version struct {
 	components    []uint
