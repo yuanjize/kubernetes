@@ -27,7 +27,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/runtime"
 )
-
+/*
+ 目前来看该文件提供了各种定时循环检查condiftion的工具，直到检查成功/超时/检查次数过多才会返回
+*/
 // For any test of the style:
 //   ...
 //   <- time.After(timeout):
@@ -36,10 +38,10 @@ import (
 // is long enough that it is effectively forever for the things that can slow down a run on a heavily contended machine
 // (GC, seeks, etc), but not so long as to make a developer ctrl-c a test run if they do happen to break that test.
 var ForeverTestTimeout = time.Second * 30
-
+// 永远不close的chan
 // NeverStop may be passed to Until to make it never stop.
 var NeverStop <-chan struct{} = make(chan struct{})
-
+// 使用Startxx来开启线程去工作，wait函数的所有的线程都执行完才会返回
 // Group allows to start a group of goroutines and wait for their completion.
 type Group struct {
 	wg sync.WaitGroup
@@ -77,6 +79,7 @@ func (g *Group) Start(f func()) {
 // Forever calls f every period for ever.
 //
 // Forever is syntactic sugar on top of Until.
+// 用固定的时间间隔干活儿，就是xxx分钟干一次
 func Forever(f func(), period time.Duration) {
 	Until(f, period, NeverStop)
 }
@@ -86,6 +89,7 @@ func Forever(f func(), period time.Duration) {
 // Until is syntactic sugar on top of JitterUntil with zero jitter factor and
 // with sliding = true (which means the timer for period starts after the f
 // completes).
+// 用固定的时间间隔干活儿，干活儿时间不计入间隔时间
 func Until(f func(), period time.Duration, stopCh <-chan struct{}) {
 	JitterUntil(f, period, 0.0, true, stopCh)
 }
@@ -105,6 +109,7 @@ func UntilWithContext(ctx context.Context, f func(context.Context), period time.
 // NonSlidingUntil is syntactic sugar on top of JitterUntil with zero jitter
 // factor, with sliding = false (meaning the timer for period starts at the same
 // time as the function starts).
+// 用固定的时间间隔干活儿，干活儿时间计入间隔时间
 func NonSlidingUntil(f func(), period time.Duration, stopCh <-chan struct{}) {
 	JitterUntil(f, period, 0.0, false, stopCh)
 }
@@ -129,6 +134,7 @@ func NonSlidingUntilWithContext(ctx context.Context, f func(context.Context), pe
 //
 // Close stopCh to stop. f may not be invoked if stop channel is already
 // closed. Pass NeverStop to if you don't want it stop.
+// 用JitteredBackoffManager作为backoff算法干活儿
 func JitterUntil(f func(), period time.Duration, jitterFactor float64, sliding bool, stopCh <-chan struct{}) {
 	BackoffUntil(f, NewJitteredBackoffManager(period, jitterFactor, &clock.RealClock{}), sliding, stopCh)
 }
@@ -137,6 +143,12 @@ func JitterUntil(f func(), period time.Duration, jitterFactor float64, sliding b
 //
 // If sliding is true, the period is computed after f runs. If it is false then
 // period includes the runtime for f.
+/*
+f就是要干的活儿
+backoff用来决定多长时间干一次活儿
+stopCh用来控制干活儿结束
+sliding用来控制f执行的时间要不要计入干活儿的间隔时间
+*/
 func BackoffUntil(f func(), backoff BackoffManager, sliding bool, stopCh <-chan struct{}) {
 	var t clock.Timer
 	for {
@@ -184,6 +196,7 @@ func BackoffUntil(f func(), backoff BackoffManager, sliding bool, stopCh <-chan 
 // period includes the runtime for f.
 //
 // Cancel context to stop. f may not be invoked if context is already expired.
+// 和JitterUntil一样，只是函数可以拿到ctx，并且由ctx来控制干活儿是否结束
 func JitterUntilWithContext(ctx context.Context, f func(context.Context), period time.Duration, jitterFactor float64, sliding bool) {
 	JitterUntil(func() { f(ctx) }, period, jitterFactor, sliding, ctx.Done())
 }
@@ -192,7 +205,8 @@ func JitterUntilWithContext(ctx context.Context, f func(context.Context), period
 // duration.
 //
 // This allows clients to avoid converging on periodic behavior. If maxFactor
-// is 0.0, a suggested default value will be chosen.
+// is 0.0, a suggested default value will be chosen
+// 在duration随机增加一个数字
 func Jitter(duration time.Duration, maxFactor float64) time.Duration {
 	if maxFactor <= 0.0 {
 		maxFactor = 1.0
@@ -203,7 +217,7 @@ func Jitter(duration time.Duration, maxFactor float64) time.Duration {
 
 // ErrWaitTimeout is returned when the condition exited without success.
 var ErrWaitTimeout = errors.New("timed out waiting for the condition")
-
+// 返回true代表条件满足，返回error代表检查要停止
 // ConditionFunc returns true if the condition is satisfied, or an error
 // if the loop should be aborted.
 type ConditionFunc func() (done bool, err error)
@@ -220,12 +234,12 @@ func (cf ConditionFunc) WithContext() ConditionWithContextFunc {
 		return cf()
 	}
 }
-
+// 就是套了个捕获panic的函数
 // runConditionWithCrashProtection runs a ConditionFunc with crash protection
 func runConditionWithCrashProtection(condition ConditionFunc) (bool, error) {
 	return runConditionWithCrashProtectionWithContext(context.TODO(), condition.WithContext())
 }
-
+// 就是套了个捕获panic的函数
 // runConditionWithCrashProtectionWithContext runs a
 // ConditionWithContextFunc with crash protection.
 func runConditionWithCrashProtectionWithContext(ctx context.Context, condition ConditionWithContextFunc) (bool, error) {
@@ -234,35 +248,37 @@ func runConditionWithCrashProtectionWithContext(ctx context.Context, condition C
 }
 
 // Backoff holds parameters applied to a Backoff function.
+// 这个结构体就是用来计算下一次尝试xxx操作之前应该sleep多长时间
 type Backoff struct {
 	// The initial duration.
-	Duration time.Duration
+	Duration time.Duration // 存储sleep时间
 	// Duration is multiplied by factor each iteration, if factor is not zero
 	// and the limits imposed by Steps and Cap have not been reached.
 	// Should not be negative.
 	// The jitter does not contribute to the updates to the duration parameter.
-	Factor float64
+	Factor float64   // 用来计算下次sleep的时间，duration+duration*Factor
 	// The sleep at each iteration is the duration plus an additional
 	// amount chosen uniformly at random from the interval between
 	// zero and `jitter*duration`.
-	Jitter float64
+	Jitter float64  // 这个值用来生成一个随机数，duration加上这个才是最终的duration
 	// The remaining number of iterations in which the duration
 	// parameter may change (but progress can be stopped earlier by
 	// hitting the cap). If not positive, the duration is not
 	// changed. Used for exponential backoff in combination with
 	// Factor and Cap.
-	Steps int
+	Steps int  //可以让迭代的次数 如果迭代的次数超过这个数那么下次再计算duration就不会再乘以Factor
 	// A limit on revised values of the duration parameter. If a
 	// multiplication by the factor parameter would make the duration
 	// exceed the cap then the duration is set to the cap and the
 	// steps parameter is set to zero.
-	Cap time.Duration
+	Cap time.Duration  // 算出来的sleep的最大值，如果查过这个值，那么就用cap作为duration并把steps设置为0
 }
 
 // Step (1) returns an amount of time to sleep determined by the
 // original Duration and Jitter and (2) mutates the provided Backoff
 // to update its Steps and Duration.
 func (b *Backoff) Step() time.Duration {
+	// 如果迭代次数耗光了，那么直接返回duration+random*duration*Jitter 或者duration不变
 	if b.Steps < 1 {
 		if b.Jitter > 0 {
 			return Jitter(b.Duration, b.Jitter)
@@ -274,6 +290,7 @@ func (b *Backoff) Step() time.Duration {
 	duration := b.Duration
 
 	// calculate the next step
+	// 次数没有耗光，那么就是b.Duration 和b.Factor还有Jitter共同计算出来一个数
 	if b.Factor != 0 {
 		b.Duration = time.Duration(float64(b.Duration) * b.Factor)
 		if b.Cap > 0 && b.Duration > b.Cap {
@@ -318,10 +335,10 @@ type BackoffManager interface {
 
 type exponentialBackoffManagerImpl struct {
 	backoff              *Backoff
-	backoffTimer         clock.Timer
-	lastBackoffStart     time.Time
+	backoffTimer         clock.Timer  // 当前backoff使用的timer，tiner.C可读的时候就可以进行操作了
+	lastBackoffStart     time.Time    // 上次调用backoff的时间
 	initialBackoff       time.Duration
-	backoffResetDuration time.Duration
+	backoffResetDuration time.Duration  // 如果now - lastBackoffStart >= backoffResetDuration 那么久重置backoff
 	clock                clock.Clock
 }
 
@@ -347,16 +364,20 @@ func NewExponentialBackoffManager(initBackoff, maxBackoff, resetDuration time.Du
 		clock:                c,
 	}
 }
-
+/*
+ exponentialBackoffManagerImpl 获取下次上市操作之前要sleep的时间
+*/
 func (b *exponentialBackoffManagerImpl) getNextBackoff() time.Duration {
+	// 两次backoff超过backoffResetDuration时长，重置backoff结构体
 	if b.clock.Now().Sub(b.lastBackoffStart) > b.backoffResetDuration {
 		b.backoff.Steps = math.MaxInt32
 		b.backoff.Duration = b.initialBackoff
 	}
 	b.lastBackoffStart = b.clock.Now()
-	return b.backoff.Step()
+	return b.backoff.Step()  // 计算sleep时间
 }
 
+// Backoff 返回一个timer,当timer.C读取成功的时候就是可以进行操作了
 // Backoff implements BackoffManager.Backoff, it returns a timer so caller can block on the timer for exponential backoff.
 // The returned timer must be drained before calling Backoff() the second time
 func (b *exponentialBackoffManagerImpl) Backoff() clock.Timer {
@@ -374,7 +395,7 @@ type jitteredBackoffManagerImpl struct {
 	jitter       float64
 	backoffTimer clock.Timer
 }
-
+// 该算法是这样的每次sleep时间是： duration+duration*jitter*ramdonFloat
 // NewJitteredBackoffManager returns a BackoffManager that backoffs with given duration plus given jitter. If the jitter
 // is negative, backoff will not be jittered.
 func NewJitteredBackoffManager(duration time.Duration, jitter float64, c clock.Clock) BackoffManager {
@@ -416,6 +437,7 @@ func (j *jitteredBackoffManagerImpl) Backoff() clock.Timer {
 // 3. a sleep truncated by the cap on duration has been completed.
 // In case (1) the returned error is what the condition function returned.
 // In all other cases, ErrWaitTimeout is returned.
+// 根据backoff定时检查天剑是否满足，如果满足/err/检查次数耗尽。那么返回
 func ExponentialBackoff(backoff Backoff, condition ConditionFunc) error {
 	for backoff.Steps > 0 {
 		if ok, err := runConditionWithCrashProtection(condition); err != nil || ok {
@@ -454,6 +476,9 @@ func Poll(interval, timeout time.Duration, condition ConditionFunc) error {
 // window is too short.
 //
 // If you want to Poll something forever, see PollInfinite.
+/*
+  每隔interval时间段检查一次条件。直到检查成功/timeout/ctx.done
+*/
 func PollWithContext(ctx context.Context, interval, timeout time.Duration, condition ConditionWithContextFunc) error {
 	return poll(ctx, false, poller(interval, timeout), condition)
 }
@@ -463,6 +488,9 @@ func PollWithContext(ctx context.Context, interval, timeout time.Duration, condi
 //
 // PollUntil always waits interval before the first run of 'condition'.
 // 'condition' will always be invoked at least once.
+/*
+  每隔interval间隔检查一次条件，如果条件合格或者stopCh close了，那么停止检查
+*/
 func PollUntil(interval time.Duration, condition ConditionFunc, stopCh <-chan struct{}) error {
 	ctx, cancel := contextForChannel(stopCh)
 	defer cancel()
@@ -474,6 +502,7 @@ func PollUntil(interval time.Duration, condition ConditionFunc, stopCh <-chan st
 //
 // PollUntilWithContext always waits interval before the first run of 'condition'.
 // 'condition' will always be invoked at least once.
+// 每隔interval时间检查一次，直到检查成功或者ctxdone
 func PollUntilWithContext(ctx context.Context, interval time.Duration, condition ConditionWithContextFunc) error {
 	return poll(ctx, false, poller(interval, 0), condition)
 }
@@ -484,6 +513,7 @@ func PollUntilWithContext(ctx context.Context, interval time.Duration, condition
 //
 // Some intervals may be missed if the condition takes too long or the time
 // window is too short.
+// 和PollInfiniteWithContext一样，只是传了一个废物ctx
 func PollInfinite(interval time.Duration, condition ConditionFunc) error {
 	return PollInfiniteWithContext(context.Background(), interval, condition.WithContext())
 }
@@ -494,6 +524,7 @@ func PollInfinite(interval time.Duration, condition ConditionFunc) error {
 //
 // Some intervals may be missed if the condition takes too long or the time
 // window is too short.
+// 目前看起来和PollUntilWithContext一样，就是隔xxx时间检查一次直到成功或者ctx done
 func PollInfiniteWithContext(ctx context.Context, interval time.Duration, condition ConditionWithContextFunc) error {
 	return poll(ctx, false, poller(interval, 0), condition)
 }
@@ -508,6 +539,7 @@ func PollInfiniteWithContext(ctx context.Context, interval time.Duration, condit
 // window is too short.
 //
 // If you want to immediately Poll something forever, see PollImmediateInfinite.
+// 和PollImmediateWithContext一样。就是进去马上先执行一次，如果失败就每interval间隔检查一次，直到成功或者超时
 func PollImmediate(interval, timeout time.Duration, condition ConditionFunc) error {
 	return PollImmediateWithContext(context.Background(), interval, timeout, condition.WithContext())
 }
@@ -522,6 +554,7 @@ func PollImmediate(interval, timeout time.Duration, condition ConditionFunc) err
 // window is too short.
 //
 // If you want to immediately Poll something forever, see PollImmediateInfinite.
+// 和PollImmediateWithContext一样。就是进去马上先执行一次，如果失败就每interval间隔检查一次，直到成功或者超时或者ctx done了
 func PollImmediateWithContext(ctx context.Context, interval, timeout time.Duration, condition ConditionWithContextFunc) error {
 	return poll(ctx, true, poller(interval, timeout), condition)
 }
@@ -530,6 +563,7 @@ func PollImmediateWithContext(ctx context.Context, interval, timeout time.Durati
 //
 // PollImmediateUntil runs the 'condition' before waiting for the interval.
 // 'condition' will always be invoked at least once.
+// 和PollImmediateWithContext一样。就是进去马上先执行一次，如果失败就每interval间隔检查一次，直到成功或者超时或者stopCh close了
 func PollImmediateUntil(interval time.Duration, condition ConditionFunc, stopCh <-chan struct{}) error {
 	ctx, cancel := contextForChannel(stopCh)
 	defer cancel()
@@ -551,6 +585,8 @@ func PollImmediateUntilWithContext(ctx context.Context, interval time.Duration, 
 //
 // Some intervals may be missed if the condition takes too long or the time
 // window is too short.
+
+// 跟上面函数差不多，直接看上面
 func PollImmediateInfinite(interval time.Duration, condition ConditionFunc) error {
 	return PollImmediateInfiniteWithContext(context.Background(), interval, condition.WithContext())
 }
@@ -562,6 +598,9 @@ func PollImmediateInfinite(interval time.Duration, condition ConditionFunc) erro
 //
 // Some intervals may be missed if the condition takes too long or the time
 // window is too short.
+/*
+  上来先执行condition做一次条件检查，如果成功那么直接返回，如果失败那么每隔interval时间进行一次条件检查，直到检查成功或者ctxDone了
+*/
 func PollImmediateInfiniteWithContext(ctx context.Context, interval time.Duration, condition ConditionWithContextFunc) error {
 	return poll(ctx, true, poller(interval, 0), condition)
 }
@@ -575,6 +614,18 @@ func PollImmediateInfiniteWithContext(ctx context.Context, interval time.Duratio
 // wait: user specified WaitFunc function that controls at what interval the condition
 // function should be invoked periodically and whether it is bound by a timeout.
 // condition: user specified ConditionWithContextFunc function.
+/*
+immediate用来控制是否上来就检查，如果检查成功那么直接返回
+如果不是immediate那么执行WaitForWithContext，根绝wait每隔一段时间检查一次，直到超时或者检查成功
+
+
+该函数是定时执行condition函数来检查条件是否满足，如果满足直接返回，如果不满足那么根据wait来定时检查，直到wait超时或者wait中的ctxdown了。如果immediate 为true，那么在进入该函数的时候就直接先检查一次，否知的话会根据wait来定时检查。
+poll函数有很多包装函数:
+   名字中带Immediate的代表参数Immediate为true
+   名字中带了WithContext的代表外部可以传递ctx来控制wait的结束
+名字中带代表可以传进来一个stopchan来控制wait的结束
+  名字中带Infinite的代表不会使用timeout参数来控制wait的执行
+*/
 func poll(ctx context.Context, immediate bool, wait WaitWithContextFunc, condition ConditionWithContextFunc) error {
 	if immediate {
 		done, err := runConditionWithCrashProtectionWithContext(ctx, condition)
@@ -628,6 +679,7 @@ type WaitWithContextFunc func(ctx context.Context) <-chan struct{}
 // When the done channel is closed, because the golang `select` statement is
 // "uniform pseudo-random", the `fn` might still run one or multiple time,
 // though eventually `WaitFor` will return.
+// 根据wait来定时检查ConditionFunc，当检查成功或者wait close了或者done close，就退出
 func WaitFor(wait WaitFunc, fn ConditionFunc, done <-chan struct{}) error {
 	ctx, cancel := contextForChannel(done)
 	defer cancel()
@@ -650,6 +702,7 @@ func WaitFor(wait WaitFunc, fn ConditionFunc, done <-chan struct{}) error {
 // When the ctx.Done() channel is closed, because the golang `select` statement is
 // "uniform pseudo-random", the `fn` might still run one or multiple times,
 // though eventually `WaitForWithContext` will return.
+// 根据wait函数每隔一段时间执行一次fn进行条件检查，直到成果或者超时
 func WaitForWithContext(ctx context.Context, wait WaitWithContextFunc, fn ConditionWithContextFunc) error {
 	waitCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -664,7 +717,7 @@ func WaitForWithContext(ctx context.Context, wait WaitWithContextFunc, fn Condit
 			if ok {
 				return nil
 			}
-			if !open {
+			if !open {  // channel关闭，说明超时了
 				return ErrWaitTimeout
 			}
 		case <-ctx.Done():
@@ -684,6 +737,7 @@ func WaitForWithContext(ctx context.Context, wait WaitWithContextFunc, fn Condit
 //
 // Output ticks are not buffered. If the channel is not ready to receive an
 // item, the tick is skipped.
+// 返回一个函数，该函数每interval间隔发一次消息到chan中，直到timeout或者ctx。done。这个时候会close chan
 func poller(interval, timeout time.Duration) WaitWithContextFunc {
 	return WaitWithContextFunc(func(ctx context.Context) <-chan struct{} {
 		ch := make(chan struct{})
@@ -706,14 +760,14 @@ func poller(interval, timeout time.Duration) WaitWithContextFunc {
 
 			for {
 				select {
-				case <-tick.C:
+				case <-tick.C:  //每隔interval定时往ch里面写东西
 					// If the consumer isn't ready for this signal drop it and
 					// check the other channels.
 					select {
 					case ch <- struct{}{}:
 					default:
 					}
-				case <-after:
+				case <-after:  // 根据timeout判断是否超时
 					return
 				case <-ctx.Done():
 					return
@@ -727,6 +781,7 @@ func poller(interval, timeout time.Duration) WaitWithContextFunc {
 
 // ExponentialBackoffWithContext works with a request context and a Backoff. It ensures that the retry wait never
 // exceeds the deadline specified by the request context.
+// 定时根据backoff检查condition 直到检查成功/ctx down了/backoff次数耗尽，返回
 func ExponentialBackoffWithContext(ctx context.Context, backoff Backoff, condition ConditionFunc) error {
 	for backoff.Steps > 0 {
 		select {
