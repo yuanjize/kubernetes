@@ -43,6 +43,7 @@ import (
 
 // JoinPreservingTrailingSlash does a path.Join of the specified elements,
 // preserving any trailing slash on the last non-empty segment
+// 把所有elem用/连接起来，最后面用/结尾
 func JoinPreservingTrailingSlash(elem ...string) string {
 	// do the basic path join
 	result := path.Join(elem...)
@@ -60,8 +61,8 @@ func JoinPreservingTrailingSlash(elem ...string) string {
 
 	return result
 }
-
 // IsTimeout returns true if the given error is a network timeout error
+// error是否是timeouterror
 func IsTimeout(err error) bool {
 	var neterr net.Error
 	if errors.As(err, &neterr) {
@@ -69,13 +70,13 @@ func IsTimeout(err error) bool {
 	}
 	return false
 }
-
 // IsProbableEOF returns true if the given error resembles a connection termination
 // scenario that would justify assuming that the watch is empty.
 // These errors are what the Go http stack returns back to us which are general
 // connection closure errors (strongly correlated) and callers that need to
 // differentiate probable errors in connection behavior between normal "this is
 // disconnected" should use the method.
+// 判断是不是EOFerror啥的
 func IsProbableEOF(err error) bool {
 	if err == nil {
 		return false
@@ -106,11 +107,12 @@ var defaultTransport = http.DefaultTransport.(*http.Transport)
 
 // SetOldTransportDefaults applies the defaults from http.DefaultTransport
 // for the Proxy, Dial, and TLSHandshakeTimeout fields if unset
+// 用默认的transport来设置一些http.Transport的空参数
 func SetOldTransportDefaults(t *http.Transport) *http.Transport {
 	if t.Proxy == nil || isDefault(t.Proxy) {
 		// http.ProxyFromEnvironment doesn't respect CIDRs and that makes it impossible to exclude things like pod and service IPs from proxy settings
 		// ProxierWithNoProxyCIDR allows CIDR rules in NO_PROXY
-		t.Proxy = NewProxierWithNoProxyCIDR(http.ProxyFromEnvironment)
+		t.Proxy = NewProxierWithNoProxyCIDR(http.ProxyFromEnvironment)  //支持noproxy的代理
 	}
 	// If no custom dialer is set, use the default context dialer
 	//lint:file-ignore SA1019 Keep supporting deprecated Dial method of custom transports
@@ -128,6 +130,7 @@ func SetOldTransportDefaults(t *http.Transport) *http.Transport {
 
 // SetTransportDefaults applies the defaults from http.DefaultTransport
 // for the Proxy, Dial, and TLSHandshakeTimeout fields if unset
+// 先初始化http.Transport必要的参数，如果没有禁止http2，那么久配置Transport为http2参数
 func SetTransportDefaults(t *http.Transport) *http.Transport {
 	t = SetOldTransportDefaults(t)
 	// Allow clients to disable http2 if needed.
@@ -140,7 +143,7 @@ func SetTransportDefaults(t *http.Transport) *http.Transport {
 	}
 	return t
 }
-
+// 获取http2读超时时间
 func readIdleTimeoutSeconds() int {
 	ret := 30
 	// User can set the readIdleTimeout to 0 to disable the HTTP/2
@@ -156,7 +159,7 @@ func readIdleTimeoutSeconds() int {
 	}
 	return ret
 }
-
+// 获取http2 ping超时时间
 func pingTimeoutSeconds() int {
 	ret := 15
 	if s := os.Getenv("HTTP2_PING_TIMEOUT_SECONDS"); len(s) > 0 {
@@ -170,7 +173,7 @@ func pingTimeoutSeconds() int {
 	}
 	return ret
 }
-
+// 位Transport配置http2配置
 func configureHTTP2Transport(t *http.Transport) error {
 	t2, err := http2.ConfigureTransports(t)
 	if err != nil {
@@ -188,7 +191,7 @@ func configureHTTP2Transport(t *http.Transport) error {
 	t2.PingTimeout = time.Duration(pingTimeoutSeconds()) * time.Second
 	return nil
 }
-
+// 是否允许使用http2
 func allowsHTTP2(t *http.Transport) bool {
 	if t.TLSClientConfig == nil || len(t.TLSClientConfig.NextProtos) == 0 {
 		// the transport expressed no NextProto preference, allow
@@ -203,14 +206,14 @@ func allowsHTTP2(t *http.Transport) bool {
 	// the transport explicitly set NextProtos and excluded http/2
 	return false
 }
-
+// 看起来是RoundTripper的包装类
 type RoundTripperWrapper interface {
 	http.RoundTripper
 	WrappedRoundTripper() http.RoundTripper
 }
 
 type DialFunc func(ctx context.Context, net, addr string) (net.Conn, error)
-
+// 从http.RoundTripper中获取到Dial函数
 func DialerFor(transport http.RoundTripper) (DialFunc, error) {
 	if transport == nil {
 		return nil, nil
@@ -240,7 +243,7 @@ func DialerFor(transport http.RoundTripper) (DialFunc, error) {
 type TLSClientConfigHolder interface {
 	TLSClientConfig() *tls.Config
 }
-
+// 从http.RoundTripper中获取到TLSClientConfig
 func TLSClientConfig(transport http.RoundTripper) (*tls.Config, error) {
 	if transport == nil {
 		return nil, nil
@@ -257,7 +260,7 @@ func TLSClientConfig(transport http.RoundTripper) (*tls.Config, error) {
 		return nil, fmt.Errorf("unknown transport type: %T", transport)
 	}
 }
-
+// FormatURL 生成一个URL对象
 func FormatURL(scheme string, host string, port int, path string) *url.URL {
 	return &url.URL{
 		Scheme: scheme,
@@ -265,7 +268,7 @@ func FormatURL(scheme string, host string, port int, path string) *url.URL {
 		Path:   path,
 	}
 }
-
+// 读取UserAgent
 func GetHTTPClient(req *http.Request) string {
 	if ua := req.UserAgent(); len(ua) != 0 {
 		return ua
@@ -278,6 +281,8 @@ func GetHTTPClient(req *http.Request) string {
 // The X-Real-Ip is omitted if it's already present in the X-Forwarded-For chain.
 // The req.RemoteAddr is always the last IP in the returned list.
 // It returns nil if all of these are empty or invalid.
+// 获得所有的源头ip
+// 最后得到的结果是：append(X-Forwarded-For...,X-Real-Ip...,req.RemoteAddr)
 func SourceIPs(req *http.Request) []net.IP {
 	var srcIPs []net.IP
 
@@ -325,7 +330,7 @@ func SourceIPs(req *http.Request) []net.IP {
 
 	return srcIPs
 }
-
+// IP是否在ips中
 // Checks whether the given IP address is contained in the list of IPs.
 func containsIP(ips []net.IP, ip net.IP) bool {
 	for _, v := range ips {
@@ -339,6 +344,7 @@ func containsIP(ips []net.IP, ip net.IP) bool {
 // Extracts and returns the clients IP from the given request.
 // Looks at X-Forwarded-For header, X-Real-Ip header and request.RemoteAddr in that order.
 // Returns nil if none of them are set or is set to an invalid value.
+// 取出所有client中带的源ip，返回第一个
 func GetClientIP(req *http.Request) net.IP {
 	ips := SourceIPs(req)
 	if len(ips) == 0 {
@@ -349,6 +355,7 @@ func GetClientIP(req *http.Request) net.IP {
 
 // Prepares the X-Forwarded-For header for another forwarding hop by appending the previous sender's
 // IP address to the X-Forwarded-For chain.
+// 把remoteAddr放到X-Forwarded-For这个header中
 func AppendForwardedForHeader(req *http.Request) {
 	// Copied from net/http/httputil/reverseproxy.go:
 	if clientIP, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
@@ -363,7 +370,7 @@ func AppendForwardedForHeader(req *http.Request) {
 }
 
 var defaultProxyFuncPointer = fmt.Sprintf("%p", http.ProxyFromEnvironment)
-
+// transportProxier是否等于defaultProxyFuncPointer
 // isDefault checks to see if the transportProxierFunc is pointing to the default one
 func isDefault(transportProxier func(*http.Request) (*url.URL, error)) bool {
 	transportProxierPointer := fmt.Sprintf("%p", transportProxier)
@@ -372,6 +379,9 @@ func isDefault(transportProxier func(*http.Request) (*url.URL, error)) bool {
 
 // NewProxierWithNoProxyCIDR constructs a Proxier function that respects CIDRs in NO_PROXY and delegates if
 // no matching CIDRs are found
+// 首先从环境变量NO_PROXY中找到所有的ip, 取得所有ip的网段，如果网段为空那么还使用delegate返回。
+// 否则返回一个函数，该函数如果每次上次器请求中解析出来的子网包含传进来的ip，如果该ip在no_proxy那么就返回（nil）就是无代理，否则使用delegate代理
+// 总结就是如果ip属于在NO_PROXY中定义的子网，那么该ip不使用代理
 func NewProxierWithNoProxyCIDR(delegate func(req *http.Request) (*url.URL, error)) func(req *http.Request) (*url.URL, error) {
 	// we wrap the default method, so we only need to perform our check if the NO_PROXY (or no_proxy) envvar has a CIDR in it
 	noProxyEnv := os.Getenv("NO_PROXY")
@@ -382,7 +392,7 @@ func NewProxierWithNoProxyCIDR(delegate func(req *http.Request) (*url.URL, error
 
 	cidrs := []*net.IPNet{}
 	for _, noProxyRule := range noProxyRules {
-		_, cidr, _ := net.ParseCIDR(noProxyRule)
+		_, cidr, _ := net.ParseCIDR(noProxyRule) //该ip坐在的子网
 		if cidr != nil {
 			cidrs = append(cidrs, cidr)
 		}
@@ -425,10 +435,22 @@ type Dialer interface {
 // ConnectWithRedirects uses dialer to send req, following up to 10 redirects (relative to
 // originalLocation). It returns the opened net.Conn and the raw response bytes.
 // If requireSameHostRedirects is true, only redirects to the same host are permitted.
+/*
+一个不断处理重定向的请求，最会返回请求体和链接
+originalLocation：初始URL
+originalMethod：第一次访问originalLocationURL时候使用的函数
+header：每次发请求的时候使用的header
+originalBody：原始的请求body
+dialer：发请求的动作
+requireSameHostRedirects：每次重定向是否host和原始host相同
+
+返回值：net.Conn是Dial发送http请求时建立的连接
+[]byte是返回的response
+*/
 func ConnectWithRedirects(originalMethod string, originalLocation *url.URL, header http.Header, originalBody io.Reader, dialer Dialer, requireSameHostRedirects bool) (net.Conn, []byte, error) {
 	const (
-		maxRedirects    = 9     // Fail on the 10th redirect
-		maxResponseSize = 16384 // play it safe to allow the potential for lots of / large headers
+		maxRedirects    = 9     // Fail on the 10th redirect 最多重定向9次
+		maxResponseSize = 16384 // play it safe to allow the potential for lots of / large headers  最大读取的response字节数
 	)
 
 	var (
@@ -465,6 +487,7 @@ redirectLoop:
 
 		// Peek at the backend response.
 		rawResponse.Reset()
+		// 每次调用respReader读取数据的时候，从intermediateConn中读取的数据同时会写入到rawResponse。目的是得到了一个rawResponse的拷贝
 		respReader := bufio.NewReader(io.TeeReader(
 			io.LimitReader(intermediateConn, maxResponseSize), // Don't read more than maxResponseSize bytes.
 			rawResponse)) // Save the raw response.
@@ -476,7 +499,7 @@ redirectLoop:
 		}
 
 		switch resp.StatusCode {
-		case http.StatusFound:
+		case http.StatusFound:  //继续重定向
 			// Redirect, continue.
 		default:
 			// Don't redirect.
@@ -519,7 +542,7 @@ redirectLoop:
 	intermediateConn = nil // Don't close the connection when we return it.
 	return connToReturn, rawResponse.Bytes(), nil
 }
-
+// 深拷贝一个Request
 // CloneRequest creates a shallow copy of the request along with a deep copy of the Headers.
 func CloneRequest(req *http.Request) *http.Request {
 	r := new(http.Request)
@@ -532,7 +555,7 @@ func CloneRequest(req *http.Request) *http.Request {
 
 	return r
 }
-
+// 深拷贝header
 // CloneHeader creates a deep copy of an http.Header.
 func CloneHeader(in http.Header) http.Header {
 	out := make(http.Header, len(in))
@@ -586,6 +609,7 @@ var (
 // ParseWarningHeader extracts one RFC2616 14.46 warning from the specified header,
 // returning an error if the header does not contain a correctly formatted warning.
 // Any remaining content in the header is returned.
+// 这个很简单，不需要追求细节，只要知道从string中parse出来WarningHeader就可以了
 func ParseWarningHeader(header string) (result WarningHeader, remainder string, err error) {
 	// https://tools.ietf.org/html/rfc2616#section-14.46
 	//   updated by
@@ -726,7 +750,7 @@ loop:
 	}
 	return result.String(), remainder, nil
 }
-
+// 根据参数创建Warning header字符串
 func NewWarningHeader(code int, agent, text string) (string, error) {
 	if code < 0 || code > 999 {
 		return "", errors.New("code must be between 0 and 999")
