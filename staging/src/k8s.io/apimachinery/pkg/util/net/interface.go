@@ -100,7 +100,15 @@ func (rf RouteFile) extract() ([]Route, error) {
 	defer file.Close()
 	return rf.parse(file)
 }
-
+//解析 /proc/net//proc/net/route 文件
+/*
+ns3	FEA9FEA9	C21D11AC	0007	0	0	0	FFFFFFFF	0	0	0type Route struct {
+	Interface   string         // ns3
+	Destination net.IP         // FEA9FEA9
+	Gateway     net.IP         // C21D11AC
+	Family      AddressFamily  // ipv4
+}
+*/
 // getIPv4DefaultRoutes obtains the IPv4 routes, and filters out non-default routes.
 func getIPv4DefaultRoutes(input io.Reader) ([]Route, error) {
 	routes := []Route{}
@@ -139,7 +147,16 @@ func getIPv4DefaultRoutes(input io.Reader) ([]Route, error) {
 	}
 	return routes, nil
 }
-
+//解析 /proc/net/ipv6_route 文件
+/*
+ff000000000000000000000000000000 08 00000000000000000000000000000000 00 00000000000000000000000000000000 00000100 00000003 0150903d 00000001     ens3
+type Route struct {
+	Interface   string         // ens3
+	Destination net.IP         //ff000000000000000000000000000000
+	Gateway     net.IP         // 00000000000000000000000000000000
+	Family      AddressFamily  //ipv6
+}
+*/
 func getIPv6DefaultRoutes(input io.Reader) ([]Route, error) {
 	routes := []Route{}
 	scanner := bufio.NewReader(input)
@@ -176,7 +193,7 @@ func getIPv6DefaultRoutes(input io.Reader) ([]Route, error) {
 	}
 	return routes, nil
 }
-
+// 从16进制字符串解析出来ipv4/6地址（net.IP结构）
 // parseIP takes the hex IP address string from route file and converts it
 // to a net.IP address. For IPv4, the value must be converted to big endian.
 func parseIP(str string, family AddressFamily) (net.IP, error) {
@@ -199,7 +216,7 @@ func parseIP(str string, family AddressFamily) (net.IP, error) {
 	}
 	return net.IP(bytes), nil
 }
-
+// 网络接口是否是启用状态
 func isInterfaceUp(intf *net.Interface) bool {
 	if intf == nil {
 		return false
@@ -210,23 +227,23 @@ func isInterfaceUp(intf *net.Interface) bool {
 	}
 	return false
 }
-
+// 接口是否是lookback或者点对点
 func isLoopbackOrPointToPoint(intf *net.Interface) bool {
 	return intf.Flags&(net.FlagLoopback|net.FlagPointToPoint) != 0
 }
-
+// 从addrs中取出来第一个单播地址
 // getMatchingGlobalIP returns the first valid global unicast address of the given
 // 'family' from the list of 'addrs'.
 func getMatchingGlobalIP(addrs []net.Addr, family AddressFamily) (net.IP, error) {
 	if len(addrs) > 0 {
 		for i := range addrs {
 			klog.V(4).Infof("Checking addr  %s.", addrs[i].String())
-			ip, _, err := net.ParseCIDR(addrs[i].String())
+			ip, _, err := net.ParseCIDR(addrs[i].String())  // 解析出来ip地址
 			if err != nil {
 				return nil, err
 			}
 			if memberOf(ip, family) {
-				if ip.IsGlobalUnicast() {
+				if ip.IsGlobalUnicast() {  // 是都是单播地址
 					klog.V(4).Infof("IP found %v", ip)
 					return ip, nil
 				} else {
@@ -243,6 +260,7 @@ func getMatchingGlobalIP(addrs []net.Addr, family AddressFamily) (net.IP, error)
 
 // getIPFromInterface gets the IPs on an interface and returns a global unicast address, if any. The
 // interface must be up, the IP must in the family requested, and the IP must be a global unicast address.
+// 根据接口名获取ip地址
 func getIPFromInterface(intfName string, forFamily AddressFamily, nw networkInterfacer) (net.IP, error) {
 	intf, err := nw.InterfaceByName(intfName)
 	if err != nil {
@@ -268,6 +286,7 @@ func getIPFromInterface(intfName string, forFamily AddressFamily, nw networkInte
 
 // getIPFromLoopbackInterface gets the IPs on a loopback interface and returns a global unicast address, if any.
 // The loopback interface must be up, the IP must in the family requested, and the IP must be a global unicast address.
+// 找一个lo的接口，找到它的ip地址
 func getIPFromLoopbackInterface(forFamily AddressFamily, nw networkInterfacer) (net.IP, error) {
 	intfs, err := nw.Interfaces()
 	if err != nil {
@@ -295,7 +314,7 @@ func getIPFromLoopbackInterface(forFamily AddressFamily, nw networkInterfacer) (
 	}
 	return nil, nil
 }
-
+// 检查ip格式是否正确
 // memberOf tells if the IP is of the desired family. Used for checking interface addresses.
 func memberOf(ip net.IP, family AddressFamily) bool {
 	if ip.To4() != nil {
@@ -308,6 +327,7 @@ func memberOf(ip net.IP, family AddressFamily) bool {
 // chooseIPFromHostInterfaces looks at all system interfaces, trying to find one that is up that
 // has a global unicast address (non-loopback, non-link local, non-point2point), and returns the IP.
 // addressFamilies determines whether it prefers IPv4 or IPv6
+// 按照addressFamilies，找到某个非lo接口的第一个ip（GlobalUnicast）
 func chooseIPFromHostInterfaces(nw networkInterfacer, addressFamilies AddressFamilyPreference) (net.IP, error) {
 	intfs, err := nw.Interfaces()
 	if err != nil {
@@ -365,19 +385,22 @@ func chooseIPFromHostInterfaces(nw networkInterfacer, addressFamilies AddressFam
 func ChooseHostInterface() (net.IP, error) {
 	return chooseHostInterface(preferIPv4)
 }
-
+// 从本机的接口中选出来一个ip
 func chooseHostInterface(addressFamilies AddressFamilyPreference) (net.IP, error) {
 	var nw networkInterfacer = networkInterface{}
+	// 如果没有ipv4路由文件那么直接尺寸从所有端口里面找
 	if _, err := os.Stat(ipv4RouteFile); os.IsNotExist(err) {
 		return chooseIPFromHostInterfaces(nw, addressFamilies)
 	}
+	// 获取所有路由信息
 	routes, err := getAllDefaultRoutes()
 	if err != nil {
 		return nil, err
 	}
+	// 从配置文件中拿到接口然后取出ip,这个可以返回lo的接口ip
 	return chooseHostInterfaceFromRoute(routes, nw, addressFamilies)
 }
-
+// 一些对net.interface的操作
 // networkInterfacer defines an interface for several net library functions. Production
 // code will forward to net library functions, and unit tests will override the methods
 // for testing purposes.
@@ -402,7 +425,7 @@ func (_ networkInterface) Addrs(intf *net.Interface) ([]net.Addr, error) {
 func (_ networkInterface) Interfaces() ([]net.Interface, error) {
 	return net.Interfaces()
 }
-
+// 把ipv6和ipv4的路由信息都读出来
 // getAllDefaultRoutes obtains IPv4 and IPv6 default routes on the node. If unable
 // to read the IPv4 routing info file, we return an error. If unable to read the IPv6
 // routing info file (which is optional), we'll just use the IPv4 route information.
@@ -426,6 +449,7 @@ func getAllDefaultRoutes() ([]Route, error) {
 // global IP address from the interface for the route. If there are routes but no global
 // address is obtained from the interfaces, it checks if the loopback interface has a global address.
 // addressFamilies determines whether it prefers IPv4 or IPv6
+// 从路由信息中取得interface,然后取得一个接口的globalIp
 func chooseHostInterfaceFromRoute(routes []Route, nw networkInterfacer, addressFamilies AddressFamilyPreference) (net.IP, error) {
 	for _, family := range addressFamilies {
 		klog.V(4).Infof("Looking for default routes with IPv%d addresses", uint(family))
@@ -464,6 +488,7 @@ func chooseHostInterfaceFromRoute(routes []Route, nw networkInterfacer, addressF
 // If bindAddress is unspecified or loopback, it returns the default IP of the same
 // address family as bindAddress.
 // Otherwise, it just returns bindAddress.
+// bindAddress是正常ip就用bindAddress，否则就用chooseHostInterface找出来一个新的ip返回回去
 func ResolveBindAddress(bindAddress net.IP) (net.IP, error) {
 	addressFamilies := preferIPv4
 	if bindAddress != nil && memberOf(bindAddress, familyIPv6) {

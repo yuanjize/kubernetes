@@ -27,6 +27,7 @@ import (
 // For example,
 //	10.0.0.1/24 and 10.0.0.0/24 are the same subnet.
 //	10.0.0.1/24 and 10.0.0.0/25 are not the same subnet.
+// 判断是否是在相同的子网里面
 func IPNetEqual(ipnet1, ipnet2 *net.IPNet) bool {
 	if ipnet1 == nil || ipnet2 == nil {
 		return false
@@ -36,7 +37,7 @@ func IPNetEqual(ipnet1, ipnet2 *net.IPNet) bool {
 	}
 	return false
 }
-
+// 判断是否是 "connection reset by peer"Error
 // Returns if the given err is "connection reset by peer" error.
 func IsConnectionReset(err error) bool {
 	var errno syscall.Errno
@@ -45,7 +46,7 @@ func IsConnectionReset(err error) bool {
 	}
 	return false
 }
-
+// 判断是否是 "connection refused" error
 // Returns if the given err is "connection refused" error
 func IsConnectionRefused(err error) bool {
 	var errno syscall.Errno

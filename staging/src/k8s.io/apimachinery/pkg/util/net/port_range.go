@@ -21,7 +21,9 @@ import (
 	"strconv"
 	"strings"
 )
-
+/*
+提供一个端口范围处理函数
+*/
 // PortRange represents a range of TCP/UDP ports.  To represent a single port,
 // set Size to 1.
 type PortRange struct {
@@ -46,6 +48,12 @@ func (pr PortRange) String() string {
 // Set parses a string of the form "value", "min-max", or "min+offset", inclusive at both ends, and
 // sets the PortRange from it.  This is part of the flag.Value and pflag.Value
 // interfaces.
+/*
+几种初始化PortRange的方式
+50(单个数这种)=》base=50 size=1
+30-100代表port的范围是30到100，base=30 size=71
+20+30=> base=20,size=31
+*/
 func (pr *PortRange) Set(value string) error {
 	const (
 		SinglePortNotation = 1 << iota
@@ -131,6 +139,7 @@ func (*PortRange) Type() string {
 
 // ParsePortRange parses a string of the form "min-max", inclusive at both
 // ends, and initializes a new PortRange from it.
+// 根据value parse出来一个PortRange
 func ParsePortRange(value string) (*PortRange, error) {
 	pr := &PortRange{}
 	err := pr.Set(value)
