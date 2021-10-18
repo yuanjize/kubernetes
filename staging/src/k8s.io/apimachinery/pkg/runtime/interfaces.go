@@ -324,6 +324,7 @@ type CacheableObject interface {
 
 // Unstructured objects store values as map[string]interface{}, with only values that can be serialized
 // to JSON allowed.
+// 一个根据map[string]interface{}来mashal和unmashal的对象
 type Unstructured interface {
 	Object
 	// NewEmptyInstance returns a new instance of the concrete type containing only kind/apiVersion and no other data.

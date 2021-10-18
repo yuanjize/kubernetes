@@ -46,12 +46,15 @@ import (
 type Scheme struct {
 	// versionMap allows one to figure out the go type of an object with
 	// the given version and name.
+	// 根据 GroupVersionKind 找到对应的go类型
 	gvkToType map[schema.GroupVersionKind]reflect.Type
 
 	// typeToGroupVersion allows one to find metadata for a given go object.
 	// The reflect.Type we index by should *not* be a pointer.
+	// 根据 go类型找到所有的GroupVersionKind
 	typeToGVK map[reflect.Type][]schema.GroupVersionKind
 
+	// 该集合中的对象不会根据版本去序列化？？她是gvkToType的子集
 	// unversionedTypes are transformed without conversion in ConvertToVersion.
 	unversionedTypes map[reflect.Type]schema.GroupVersionKind
 
@@ -62,18 +65,22 @@ type Scheme struct {
 
 	// Map from version and resource to the corresponding func to convert
 	// resource field labels in that version to internal version.
+	// 转换函数集合，把外部filed转换为内部表示
 	fieldLabelConversionFuncs map[schema.GroupVersionKind]FieldLabelConversionFunc
 
 	// defaulterFuncs is an array of interfaces to be called with an object to provide defaulting
 	// the provided object must be a pointer.
+	// 注册了一堆函数，调用default的时候会调用该函数，函数参数是reflect.Type的实例类型
 	defaulterFuncs map[reflect.Type]func(interface{})
 
 	// converter stores all registered conversion functions. It also has
 	// default converting behavior.
+	// 用来做类型转换的
 	converter *conversion.Converter
 
 	// versionPriority is a map of groups to ordered lists of versions for those groups indicating the
 	// default priorities of these versions as registered in the scheme
+	// key就是group，value是一个version数组，这个数组是按照优先级排序的
 	versionPriority map[string][]string
 
 	// observedVersions keeps track of the order we've seen versions during type registration
@@ -85,6 +92,7 @@ type Scheme struct {
 }
 
 // FieldLabelConversionFunc converts a field selector to internal representation.
+// 转换field selector 为内部表示，就是外部kv转换为内部kv
 type FieldLabelConversionFunc func(label, value string) (internalLabel, internalValue string, err error)
 
 // NewScheme creates a new Scheme. This scheme is pluggable by default.
@@ -109,6 +117,8 @@ func NewScheme() *Scheme {
 
 // nameFunc returns the name of the type that we wish to use to determine when two types attempt
 // a conversion. Defaults to the go name of the type if the type is not registered.
+// 根据reflect.Type取出来对应的名字，如果没有注册过那么使用reflect.Type.Name作为名字，否则使用注册名字
+// 给conversion用的
 func (s *Scheme) nameFunc(t reflect.Type) string {
 	// find the preferred names for this type
 	gvks, ok := s.typeToGVK[t]
@@ -117,6 +127,7 @@ func (s *Scheme) nameFunc(t reflect.Type) string {
 	}
 
 	for _, gvk := range gvks {
+		// 强制把Version写为APIVersionInternal,取出来内部版本对应的名字
 		internalGV := gvk.GroupVersion()
 		internalGV.Version = APIVersionInternal // this is hacky and maybe should be passed in
 		internalGVK := internalGV.WithKind(gvk.Kind)
@@ -130,6 +141,7 @@ func (s *Scheme) nameFunc(t reflect.Type) string {
 }
 
 // Converter allows access to the converter for the scheme
+// 拿到converter，这个对象是用来做类型转换的
 func (s *Scheme) Converter() *conversion.Converter {
 	return s.converter
 }
@@ -141,6 +153,11 @@ func (s *Scheme) Converter() *conversion.Converter {
 //
 // TODO: there is discussion about removing unversioned and replacing it with objects that are manifest into
 //   every version with particular schemas. Resolve this method at that point.
+/*
+AddUnversionedTypes会这册对象为Unversioned妈妈这种对象序列化的时候根据被提供的Unversioned去序列化，不会被converted
+  先把用AddKnownTypes 注册到gvkToType和typeToGVK
+  然后注册到unversionedTypes和unversionedKinds
+*/
 func (s *Scheme) AddUnversionedTypes(version schema.GroupVersion, types ...Object) {
 	s.addObservedVersion(version)
 	s.AddKnownTypes(version, types...)
@@ -159,6 +176,7 @@ func (s *Scheme) AddUnversionedTypes(version schema.GroupVersion, types ...Objec
 // All objects passed to types should be pointers to structs. The name that go reports for
 // the struct becomes the "kind" field when encoding. Version may not be empty - use the
 // APIVersionInternal constant if you have a type that does not have a formal version.
+// 和AddKnownTypeWithName一样，就是注册gvk和type，区别是AddKnownTypeWithName自己指定kind，但是AddKnownTypes默认的kind是反射的结构体的名字
 func (s *Scheme) AddKnownTypes(gv schema.GroupVersion, types ...Object) {
 	s.addObservedVersion(gv)
 	for _, obj := range types {
@@ -175,6 +193,7 @@ func (s *Scheme) AddKnownTypes(gv schema.GroupVersion, types ...Object) {
 // be encoded as. Useful for testing when you don't want to make multiple packages to define
 // your structs. Version may not be empty - use the APIVersionInternal constant if you have a
 // type that does not have a formal version.
+// 注册obj和GroupVersionKind到gvkToType和typeToGVK,如果实现了DeepCopyInto，函数，那么注册该类型和转换函数到converter
 func (s *Scheme) AddKnownTypeWithName(gvk schema.GroupVersionKind, obj Object) {
 	s.addObservedVersion(gvk.GroupVersion())
 	t := reflect.TypeOf(obj)
@@ -202,6 +221,7 @@ func (s *Scheme) AddKnownTypeWithName(gvk schema.GroupVersionKind, obj Object) {
 	}
 	s.typeToGVK[t] = append(s.typeToGVK[t], gvk)
 
+	// 如果有DeepCopyInto，函数，那么注册该类型和转换函数到converter
 	// if the type implements DeepCopyInto(<obj>), register a self-conversion
 	if m := reflect.ValueOf(obj).MethodByName("DeepCopyInto"); m.IsValid() && m.Type().NumIn() == 1 && m.Type().NumOut() == 0 && m.Type().In(0) == reflect.TypeOf(obj) {
 		if err := s.AddGeneratedConversionFunc(obj, obj, func(a, b interface{}, scope conversion.Scope) error {
@@ -217,6 +237,7 @@ func (s *Scheme) AddKnownTypeWithName(gvk schema.GroupVersionKind, obj Object) {
 }
 
 // KnownTypes returns the types known for the given version.
+// 从gvkToType中，找出所有gv版本的 kind->reflect.Type集合
 func (s *Scheme) KnownTypes(gv schema.GroupVersion) map[string]reflect.Type {
 	types := make(map[string]reflect.Type)
 	for gvk, t := range s.gvkToType {
@@ -231,7 +252,9 @@ func (s *Scheme) KnownTypes(gv schema.GroupVersion) map[string]reflect.Type {
 
 // VersionsForGroupKind returns the versions that a particular GroupKind can be converted to within the given group.
 // A GroupKind might be converted to a different group. That information is available in EquivalentResourceMapper.
+// 1.从gvkToType中找到所有该GroupKind可以使用的GroupVersion，2. 给1中找到的version按照优先级排序
 func (s *Scheme) VersionsForGroupKind(gk schema.GroupKind) []schema.GroupVersion {
+	// 先找到该类型的所有版本
 	availableVersions := []schema.GroupVersion{}
 	for gvk := range s.gvkToType {
 		if gk != gvk.GroupKind() {
@@ -256,12 +279,14 @@ func (s *Scheme) VersionsForGroupKind(gk schema.GroupKind) []schema.GroupVersion
 }
 
 // AllKnownTypes returns the all known types.
+// 返回gvkToType集合
 func (s *Scheme) AllKnownTypes() map[schema.GroupVersionKind]reflect.Type {
 	return s.gvkToType
 }
 
 // ObjectKinds returns all possible group,version,kind of the go object, true if the
 // object is considered unversioned, or an error if it's not a pointer or is unregistered.
+// 返回所有obj对应的GroupVersionKind（从map读），第二个参数表明obj是都是unversioned(根据是否在unversionedTypes map中)
 func (s *Scheme) ObjectKinds(obj Object) ([]schema.GroupVersionKind, bool, error) {
 	// Unstructured objects are always considered to have their declared GVK
 	if _, ok := obj.(Unstructured); ok {
@@ -293,11 +318,13 @@ func (s *Scheme) ObjectKinds(obj Object) ([]schema.GroupVersionKind, bool, error
 
 // Recognizes returns true if the scheme is able to handle the provided group,version,kind
 // of an object.
+// 是否在gvkToType中
 func (s *Scheme) Recognizes(gvk schema.GroupVersionKind) bool {
 	_, exists := s.gvkToType[gvk]
 	return exists
 }
 
+// 是否在unversionedTypes中
 func (s *Scheme) IsUnversioned(obj Object) (bool, bool) {
 	v, err := conversion.EnforcePtr(obj)
 	if err != nil {
@@ -314,6 +341,7 @@ func (s *Scheme) IsUnversioned(obj Object) (bool, bool) {
 
 // New returns a new API object of the given version and name, or an error if it hasn't
 // been registered. The version and kind fields must be specified.
+// 找到GroupVersionKind对应的 type，根据这个type创建object
 func (s *Scheme) New(kind schema.GroupVersionKind) (Object, error) {
 	if t, exists := s.gvkToType[kind]; exists {
 		return reflect.New(t).Interface().(Object), nil
@@ -328,6 +356,7 @@ func (s *Scheme) New(kind schema.GroupVersionKind) (Object, error) {
 // AddIgnoredConversionType identifies a pair of types that should be skipped by
 // conversion (because the data inside them is explicitly dropped during
 // conversion).
+// 注册被忽略的类型到converter中，convert的时候这种类型会跳过
 func (s *Scheme) AddIgnoredConversionType(from, to interface{}) error {
 	return s.converter.RegisterIgnoredConversion(from, to)
 }
@@ -335,6 +364,7 @@ func (s *Scheme) AddIgnoredConversionType(from, to interface{}) error {
 // AddConversionFunc registers a function that converts between a and b by passing objects of those
 // types to the provided function. The function *must* accept objects of a and b - this machinery will not enforce
 // any other guarantee.
+// 注册类型及其转换函数到converter中
 func (s *Scheme) AddConversionFunc(a, b interface{}, fn conversion.ConversionFunc) error {
 	return s.converter.RegisterUntypedConversionFunc(a, b, fn)
 }
@@ -342,12 +372,14 @@ func (s *Scheme) AddConversionFunc(a, b interface{}, fn conversion.ConversionFun
 // AddGeneratedConversionFunc registers a function that converts between a and b by passing objects of those
 // types to the provided function. The function *must* accept objects of a and b - this machinery will not enforce
 // any other guarantee.
+// 注册类型及其转换函数到converter中
 func (s *Scheme) AddGeneratedConversionFunc(a, b interface{}, fn conversion.ConversionFunc) error {
 	return s.converter.RegisterGeneratedUntypedConversionFunc(a, b, fn)
 }
 
 // AddFieldLabelConversionFunc adds a conversion function to convert field selectors
 // of the given kind from the given version to internal version representation.
+// 注册一个转换函数，用来转换field selector 为内部表示
 func (s *Scheme) AddFieldLabelConversionFunc(gvk schema.GroupVersionKind, conversionFunc FieldLabelConversionFunc) error {
 	s.fieldLabelConversionFuncs[gvk] = conversionFunc
 	return nil
@@ -358,11 +390,13 @@ func (s *Scheme) AddFieldLabelConversionFunc(gvk schema.GroupVersionKind, conver
 // when Default() is called. The function will never be called unless the
 // defaulted object matches srcType. If this function is invoked twice with the
 // same srcType, the fn passed to the later call will be used instead.
+// 注册一堆函数到defaulterFuncs中，调用default的时候会执行注册的函数，并把object传进去
 func (s *Scheme) AddTypeDefaultingFunc(srcType Object, fn func(interface{})) {
 	s.defaulterFuncs[reflect.TypeOf(srcType)] = fn
 }
 
 // Default sets defaults on the provided Object.
+// 这里会执行上面注册的default函数
 func (s *Scheme) Default(src Object) {
 	if fn, ok := s.defaulterFuncs[reflect.TypeOf(src)]; ok {
 		fn(src)
@@ -375,6 +409,12 @@ func (s *Scheme) Default(src Object) {
 // a to test conversion of types that are nested within registered types). The
 // context interface is passed to the convertor. Convert also supports Unstructured
 // types and will convert them intelligently.
+/*
+  1.如果都是Unstructured类型，你把么直接把in mashal之后让outset一下就可以了
+  2.
+  3.in 是Unstructured类型。把Unstructured mashal，然后转换为有类型的struct
+  如果都不是Unstructured类型，那么调用converter.Convert进行转换
+*/
 func (s *Scheme) Convert(in, out interface{}, context interface{}) error {
 	unstructuredIn, okIn := in.(Unstructured)
 	unstructuredOut, okOut := out.(Unstructured)
@@ -429,6 +469,7 @@ func (s *Scheme) Convert(in, out interface{}, context interface{}) error {
 	case okIn:
 		// converting an unstructured object to any type is modeled by first converting
 		// the input to a versioned type, then running standard conversions
+		// 把Unstructured mashal，然后转换为有类型的struct
 		typed, err := s.unstructuredToTyped(unstructuredIn)
 		if err != nil {
 			return err
@@ -470,7 +511,7 @@ func (s *Scheme) UnsafeConvertToVersion(in Object, target GroupVersioner) (Objec
 // convertToVersion handles conversion with an optional copy.
 func (s *Scheme) convertToVersion(copy bool, in Object, target GroupVersioner) (Object, error) {
 	var t reflect.Type
-
+	// in Unstructured 转换为一个typed object
 	if u, ok := in.(Unstructured); ok {
 		typed, err := s.unstructuredToTyped(u)
 		if err != nil {
@@ -483,6 +524,7 @@ func (s *Scheme) convertToVersion(copy bool, in Object, target GroupVersioner) (
 
 	} else {
 		// determine the incoming kinds with as few allocations as possible.
+		// 必须是指针，分配内存用的
 		t = reflect.TypeOf(in)
 		if t.Kind() != reflect.Ptr {
 			return nil, fmt.Errorf("only pointer types may be converted: %v", t)
@@ -548,6 +590,7 @@ func (s *Scheme) convertToVersion(copy bool, in Object, target GroupVersioner) (
 // unstructuredToTyped attempts to transform an unstructured object to a typed
 // object if possible. It will return an error if conversion is not possible, or the versioned
 // Go form of the object. Note that this conversion will lose fields.
+// 把in拷贝出来一个 typed object，可能会丢字段。目前就先当深拷贝把
 func (s *Scheme) unstructuredToTyped(in Unstructured) (Object, error) {
 	// the type must be something we recognize
 	gvks, _, err := s.ObjectKinds(in)
@@ -611,6 +654,12 @@ func (s *Scheme) SetVersionPriority(versions ...schema.GroupVersion) error {
 }
 
 // PrioritizedVersionsForGroup returns versions for a single group in priority order
+/*
+  1.根据group找到对应的version数组（按照优先级排序）
+  2.去observedVersions找到剩余的version
+  最后返回
+  认为就是找到group对应的所有的Version数组,然后按照优先级排序最后返回
+*/
 func (s *Scheme) PrioritizedVersionsForGroup(group string) []schema.GroupVersion {
 	ret := []schema.GroupVersion{}
 	for _, version := range s.versionPriority[group] {
@@ -705,7 +754,7 @@ func (s *Scheme) IsVersionRegistered(version schema.GroupVersion) bool {
 
 	return false
 }
-
+// addObservedVersion 添加到observedVersion中
 func (s *Scheme) addObservedVersion(version schema.GroupVersion) {
 	if len(version.Version) == 0 || version.Version == APIVersionInternal {
 		return
