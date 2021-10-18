@@ -72,6 +72,7 @@ var atomsToAttrs = map[atom.Atom]sets.String{
 
 // Transport is a transport for text/html content that replaces URLs in html
 // content with the prefix of the proxy server
+// 重写了一个RoundTrip，就是做个正向代理，在拿到response字后根据自己的配置重写url
 type Transport struct {
 	Scheme      string
 	Host        string
@@ -104,7 +105,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err != nil {
 		return nil, errors.NewServiceUnavailable(fmt.Sprintf("error trying to reach service: %v", err))
 	}
-
+    // 根据t的schema，host字段重写url
 	if redirect := resp.Header.Get("Location"); redirect != "" {
 		resp.Header.Set("Location", t.rewriteURL(redirect, req.URL, req.Host))
 		return resp, nil
@@ -130,6 +131,7 @@ func (rt *Transport) WrappedRoundTripper() http.RoundTripper {
 // to the same host as sourceURL, which is the page on which the target URL
 // occurred, or if the URL matches the sourceRequestHost. If any error occurs (e.g.
 // parsing), it returns targetURL.
+// 如果重定向的服务和之前自己请求的服务是一个服务，那么替换他的schema和host，并给path加上前缀
 func (t *Transport) rewriteURL(targetURL string, sourceURL *url.URL, sourceRequestHost string) string {
 	url, err := url.Parse(targetURL)
 	if err != nil {
@@ -148,7 +150,7 @@ func (t *Transport) rewriteURL(targetURL string, sourceURL *url.URL, sourceReque
 	//      or sourceRequestHost, we should not consider the returned URL to be a completely different host.
 	//      It's the API server's responsibility to rewrite a same-host-and-absolute-path URL and append the
 	//      necessary URL prefix (i.e. /api/v1/namespace/foo/service/bar/proxy/).
-	isDifferentHost := url.Host != "" && url.Host != sourceURL.Host && url.Host != sourceRequestHost
+	isDifferentHost := url.Host != "" && url.Host != sourceURL.Host && url.Host != sourceRequestHost  // 重定向到了别的服务器
 	isRelative := !strings.HasPrefix(url.Path, "/")
 	if isDifferentHost || isRelative {
 		return targetURL
@@ -156,6 +158,7 @@ func (t *Transport) rewriteURL(targetURL string, sourceURL *url.URL, sourceReque
 
 	// Do not rewrite scheme and host if the Transport has empty scheme and host
 	// when targetURL already contains the sourceRequestHost
+	// 重写schema和host
 	if !(url.Host == sourceRequestHost && t.Scheme == "" && t.Host == "") {
 		url.Scheme = t.Scheme
 		url.Host = t.Host

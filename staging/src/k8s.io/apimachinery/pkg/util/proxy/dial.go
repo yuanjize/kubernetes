@@ -35,10 +35,11 @@ import (
 // For this reason this method will prefer to negotiate http/1.1 if the URL scheme is https.
 // If you wish to ensure ALPN negotiates http2 then set NextProto=[]string{"http2"} in the
 // TLSConfig of the http.Transport
+// 使用transport dial连接
 func dialURL(ctx context.Context, url *url.URL, transport http.RoundTripper) (net.Conn, error) {
-	dialAddr := netutil.CanonicalAddr(url)
+	dialAddr := netutil.CanonicalAddr(url)  // 获取 host:ip 地址用来访问
 
-	dialer, err := utilnet.DialerFor(transport)
+	dialer, err := utilnet.DialerFor(transport) // 从transport获取dialer
 	if err != nil {
 		klog.V(5).Infof("Unable to unwrap transport %T to get dialer: %v", transport, err)
 	}
