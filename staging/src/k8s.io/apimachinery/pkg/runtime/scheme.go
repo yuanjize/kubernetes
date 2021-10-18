@@ -27,7 +27,6 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
-
 // Scheme defines methods for serializing and deserializing API objects, a type
 // registry for converting group, version, and kind information to and from Go
 // schemas, and mappings between Go schemas of different versions. A scheme is the
@@ -43,6 +42,14 @@ import (
 //
 // Schemes are not expected to change at runtime and are only threadsafe after
 // registration is complete.
+/*
+主要使用来序列化和反序列化aou对象，并且存储了kind，version，group，type信息，用来在不同的api版本之间相互转换
+很多动作也是使用converter完成的
+   Type：就是一个go结构体
+   Kind：是go结构体在特定Version下的名称
+   Group：标志一组随时间演变的Version，Kind，Type
+   Unversioned：保证向后兼容的，所以不用转换，直接使用当前结构就行
+*/
 type Scheme struct {
 	// versionMap allows one to figure out the go type of an object with
 	// the given version and name.
@@ -54,7 +61,7 @@ type Scheme struct {
 	// 根据 go类型找到所有的GroupVersionKind
 	typeToGVK map[reflect.Type][]schema.GroupVersionKind
 
-	// 该集合中的对象不会根据版本去序列化？？她是gvkToType的子集
+	// 该集合中的对象不会根据版本去转换，一般是弄个深拷贝就完了？？她是gvkToType的子集
 	// unversionedTypes are transformed without conversion in ConvertToVersion.
 	unversionedTypes map[reflect.Type]schema.GroupVersionKind
 
@@ -83,6 +90,7 @@ type Scheme struct {
 	// key就是group，value是一个version数组，这个数组是按照优先级排序的
 	versionPriority map[string][]string
 
+	// 看起来所有初测操作都会同时写到这里面
 	// observedVersions keeps track of the order we've seen versions during type registration
 	observedVersions []schema.GroupVersion
 
@@ -410,8 +418,9 @@ func (s *Scheme) Default(src Object) {
 // context interface is passed to the convertor. Convert also supports Unstructured
 // types and will convert them intelligently.
 /*
+ 就是把in里面的数据准换到out里面来
   1.如果都是Unstructured类型，你把么直接把in mashal之后让outset一下就可以了
-  2.
+  2.out 是Unstructured类型，先得到一个kind版本的in，然后unmashal，最后mashal到out里面
   3.in 是Unstructured类型。把Unstructured mashal，然后转换为有类型的struct
   如果都不是Unstructured类型，那么调用converter.Convert进行转换
 */
@@ -455,7 +464,7 @@ func (s *Scheme) Convert(in, out interface{}, context interface{}) error {
 			return fmt.Errorf("unable to convert the internal object type %T to Unstructured without providing a preferred version to convert to", in)
 		}
 		// Convert is implicitly unsafe, so we don't need to perform a safe conversion
-		versioned, err := s.UnsafeConvertToVersion(obj, target)
+		versioned, err := s.UnsafeConvertToVersion(obj, target)  // 得到一个kind版本的obj
 		if err != nil {
 			return err
 		}
@@ -484,6 +493,7 @@ func (s *Scheme) Convert(in, out interface{}, context interface{}) error {
 
 // ConvertFieldLabel alters the given field label and value for an kind field selector from
 // versioned representation to an unversioned one or returns an error.
+// 把外部field selector转换成内部field selector
 func (s *Scheme) ConvertFieldLabel(gvk schema.GroupVersionKind, label, value string) (string, string, error) {
 	conversionFunc, ok := s.fieldLabelConversionFuncs[gvk]
 	if !ok {
@@ -497,6 +507,7 @@ func (s *Scheme) ConvertFieldLabel(gvk schema.GroupVersionKind, label, value str
 // contain the inKind (or a mapping by name defined with AddKnownTypeWithName). Will also
 // return an error if the conversion does not result in a valid Object being
 // returned. Passes target down to the conversion methods as the Context on the scope.
+// 把in对象转换成GroupVersiner指定的版本，返回的值和in没有贡献字段（就是in和out可能有共同引用）
 func (s *Scheme) ConvertToVersion(in Object, target GroupVersioner) (Object, error) {
 	return s.convertToVersion(true, in, target)
 }
@@ -504,11 +515,15 @@ func (s *Scheme) ConvertToVersion(in Object, target GroupVersioner) (Object, err
 // UnsafeConvertToVersion will convert in to the provided target if such a conversion is possible,
 // but does not guarantee the output object does not share fields with the input object. It attempts to be as
 // efficient as possible when doing conversion.
+// 把in对象转换成GroupVersiner指定的版本，不保证返回的值和in没有贡献字段（就是in和out可能有共同引用）。和上面函数相比就是一个是深拷贝，一个是浅拷贝
 func (s *Scheme) UnsafeConvertToVersion(in Object, target GroupVersioner) (Object, error) {
 	return s.convertToVersion(false, in, target)
 }
 
 // convertToVersion handles conversion with an optional copy.
+/*
+  如果不需要转换那么直接return in.deepcopy，否则使用convert进行转换
+*/
 func (s *Scheme) convertToVersion(copy bool, in Object, target GroupVersioner) (Object, error) {
 	var t reflect.Type
 	// in Unstructured 转换为一个typed object
@@ -608,11 +623,13 @@ func (s *Scheme) unstructuredToTyped(in Unstructured) (Object, error) {
 }
 
 // generateConvertMeta constructs the meta value we pass to Convert.
+// 目前DefaultMeta就是一个空的操作
 func (s *Scheme) generateConvertMeta(in interface{}) *conversion.Meta {
 	return s.converter.DefaultMeta(reflect.TypeOf(in))
 }
 
 // copyAndSetTargetKind performs a conditional copy before returning the object, or an error if copy was not successful.
+// 如果copy是true那么就对Object进行深拷贝，然后setkind
 func copyAndSetTargetKind(copy bool, obj Object, kind schema.GroupVersionKind) (Object, error) {
 	if copy {
 		obj = obj.DeepCopyObject()
@@ -622,6 +639,7 @@ func copyAndSetTargetKind(copy bool, obj Object, kind schema.GroupVersionKind) (
 }
 
 // setTargetKind sets the kind on an object, taking into account whether the target kind is the internal version.
+// 设置obj的GroupVersionKind
 func setTargetKind(obj Object, kind schema.GroupVersionKind) {
 	if kind.Version == APIVersionInternal {
 		// internal is a special case
@@ -634,6 +652,7 @@ func setTargetKind(obj Object, kind schema.GroupVersionKind) {
 
 // SetVersionPriority allows specifying a precise order of priority. All specified versions must be in the same group,
 // and the specified order overwrites any previously specified order for this group
+// 给group重写一个优先级进去，versions必须是同一个group的,并且versions顺序就是优先级顺序
 func (s *Scheme) SetVersionPriority(versions ...schema.GroupVersion) error {
 	groups := sets.String{}
 	order := []string{}
@@ -686,6 +705,7 @@ func (s *Scheme) PrioritizedVersionsForGroup(group string) []schema.GroupVersion
 
 // PrioritizedVersionsAllGroups returns all known versions in their priority order.  Groups are random, but
 // versions for a single group are prioritized
+// 把所有versions按照优先级顺序遍历出来，group顺序是随机的
 func (s *Scheme) PrioritizedVersionsAllGroups() []schema.GroupVersion {
 	ret := []schema.GroupVersion{}
 	for group, versions := range s.versionPriority {
@@ -710,6 +730,7 @@ func (s *Scheme) PrioritizedVersionsAllGroups() []schema.GroupVersion {
 
 // PreferredVersionAllGroups returns the most preferred version for every group.
 // group ordering is random.
+// 返回每隔group优先级最高的GroupVersion
 func (s *Scheme) PreferredVersionAllGroups() []schema.GroupVersion {
 	ret := []schema.GroupVersion{}
 	for group, versions := range s.versionPriority {
@@ -735,6 +756,7 @@ func (s *Scheme) PreferredVersionAllGroups() []schema.GroupVersion {
 }
 
 // IsGroupRegistered returns true if types for the group have been registered with the scheme
+// group是否在observedVersions集合中
 func (s *Scheme) IsGroupRegistered(group string) bool {
 	for _, observedVersion := range s.observedVersions {
 		if observedVersion.Group == group {
@@ -745,6 +767,7 @@ func (s *Scheme) IsGroupRegistered(group string) bool {
 }
 
 // IsVersionRegistered returns true if types for the version have been registered with the scheme
+// version是否在observedVersions集合中
 func (s *Scheme) IsVersionRegistered(version schema.GroupVersion) bool {
 	for _, observedVersion := range s.observedVersions {
 		if observedVersion == version {
