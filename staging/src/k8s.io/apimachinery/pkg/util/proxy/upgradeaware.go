@@ -56,24 +56,24 @@ type UpgradeRequestRoundTripper interface {
 // UpgradeAwareHandler is a handler for proxy requests that may require an upgrade
 type UpgradeAwareHandler struct {
 	// UpgradeRequired will reject non-upgrade connections if true.
-	UpgradeRequired bool
+	UpgradeRequired bool  // 该请求必须是协议升级请求
 	// Location is the location of the upstream proxy. It is used as the location to Dial on the upstream server
 	// for upgrade requests unless UseRequestLocationOnUpgrade is true.
-	Location *url.URL
+	Location *url.URL // 上游代理的url，需要upgrade升级的时候会使用这个url
 	// Transport provides an optional round tripper to use to proxy. If nil, the default proxy transport is used
-	Transport http.RoundTripper
+	Transport http.RoundTripper // 默认的Transport
 	// UpgradeTransport, if specified, will be used as the backend transport when upgrade requests are provided.
 	// This allows clients to disable HTTP/2.
-	UpgradeTransport UpgradeRequestRoundTripper
+	UpgradeTransport UpgradeRequestRoundTripper  // upgrade请求使用这个代理
 	// WrapTransport indicates whether the provided Transport should be wrapped with default proxy transport behavior (URL rewriting, X-Forwarded-* header setting)
-	WrapTransport bool
+	WrapTransport bool // 使用请求数据req.URL wrap一下request
 	// InterceptRedirects determines whether the proxy should sniff backend responses for redirects,
 	// following them as necessary.
-	InterceptRedirects bool
+	InterceptRedirects bool  // 判断是否自动处理重定向
 	// RequireSameHostRedirects only allows redirects to the same host. It is only used if InterceptRedirects=true.
 	RequireSameHostRedirects bool
 	// UseRequestLocation will use the incoming request URL when talking to the backend server.
-	UseRequestLocation bool
+	UseRequestLocation bool  // 使用请求中的location信息向上游发请求
 	// UseLocationHost overrides the HTTP host header in requests to the backend server to use the Host from Location.
 	// This will override the req.Host field of a request, while UseRequestLocation will override the req.URL field
 	// of a request. The req.URL.Host specifies the server to connect to, while the req.Host field
@@ -81,9 +81,9 @@ type UpgradeAwareHandler struct {
 	// just be forwarded to the backend server.
 	UseLocationHost bool
 	// FlushInterval controls how often the standard HTTP proxy will flush content from the upstream.
-	FlushInterval time.Duration
+	FlushInterval time.Duration // 多久刷新一个来自上游的content
 	// MaxBytesPerSec controls the maximum rate for an upstream connection. No rate is imposed if the value is zero.
-	MaxBytesPerSec int64
+	MaxBytesPerSec int64 // 和上游的最大传输速率
 	// Responder is passed errors that occur while setting up proxying.
 	Responder ErrorResponder
 }
@@ -116,20 +116,20 @@ func (r simpleResponder) Error(w http.ResponseWriter, req *http.Request, err err
 
 // upgradeRequestRoundTripper implements proxy.UpgradeRequestRoundTripper.
 type upgradeRequestRoundTripper struct {
-	http.RoundTripper
-	upgrader http.RoundTripper
+	http.RoundTripper // 用来发请求
+	upgrader http.RoundTripper  //用来写header
 }
 
 var (
 	_ UpgradeRequestRoundTripper  = &upgradeRequestRoundTripper{}
 	_ utilnet.RoundTripperWrapper = &upgradeRequestRoundTripper{}
 )
-
+// 返回底层的RoundTripper
 // WrappedRoundTripper returns the round tripper that a caller would use.
 func (rt *upgradeRequestRoundTripper) WrappedRoundTripper() http.RoundTripper {
 	return rt.RoundTripper
 }
-
+// 使用upreader发送请求，然后把response里面的Request返回，感觉就是看upgrade做了啥修改吧
 // WriteToRequest calls the nested upgrader and then copies the returned request
 // fields onto the passed request.
 func (rt *upgradeRequestRoundTripper) WrapRequest(req *http.Request) (*http.Request, error) {
@@ -139,7 +139,7 @@ func (rt *upgradeRequestRoundTripper) WrapRequest(req *http.Request) (*http.Requ
 	}
 	return resp.Request, nil
 }
-
+// 返回一个假的200，request原路返回
 // onewayRoundTripper captures the provided request - which is assumed to have
 // been modified by other round trippers - and then returns a fake response.
 type onewayRoundTripper struct{}
@@ -161,13 +161,14 @@ var MirrorRequest http.RoundTripper = onewayRoundTripper{}
 // NewUpgradeRequestRoundTripper takes two round trippers - one for the underlying TCP connection, and
 // one that is able to write headers to an HTTP request. The request rt is used to set the request headers
 // and that is written to the underlying connection rt.
+// 两个RoundTripper，一个用于tcp连接，一个（upgrader）用于放请求头
 func NewUpgradeRequestRoundTripper(connection, request http.RoundTripper) UpgradeRequestRoundTripper {
 	return &upgradeRequestRoundTripper{
 		RoundTripper: connection,
 		upgrader:     request,
 	}
 }
-
+// parse一下location
 // normalizeLocation returns the result of parsing the full URL, with scheme set to http if missing
 func normalizeLocation(location *url.URL) *url.URL {
 	normalized, _ := url.Parse(location.String())
@@ -189,10 +190,10 @@ func NewUpgradeAwareHandler(location *url.URL, transport http.RoundTripper, wrap
 		Responder:       responder,
 	}
 }
-
+// 如果支持协议升级，那么就用UpgradeTransport创建反向代理，否则使用普通transport创建反向代理
 // ServeHTTP handles the proxy request
 func (h *UpgradeAwareHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	if h.tryUpgrade(w, req) {
+	if h.tryUpgrade(w, req) {  // 如果支持协议升级，该函数会创建代理
 		return
 	}
 	if h.UpgradeRequired {
@@ -263,16 +264,16 @@ func (noSuppressPanicError) Write(p []byte) (n int, err error) {
 	}
 	return os.Stderr.Write(p)
 }
-
+// 这个函数返回值代表是否需要协议升级，如果需要，那么该代理会为上游和下游创建代理
 // tryUpgrade returns true if the request was handled.
 func (h *UpgradeAwareHandler) tryUpgrade(w http.ResponseWriter, req *http.Request) bool {
-	if !httpstream.IsUpgradeRequest(req) {
+	if !httpstream.IsUpgradeRequest(req) { // 不需要协议升级
 		klog.V(6).Infof("Request was not an upgrade")
 		return false
 	}
 
 	var (
-		backendConn net.Conn
+		backendConn net.Conn  // 和上游做协议升级用的
 		rawResponse []byte
 		err         error
 	)
@@ -283,12 +284,12 @@ func (h *UpgradeAwareHandler) tryUpgrade(w http.ResponseWriter, req *http.Reques
 		location.Scheme = h.Location.Scheme
 		location.Host = h.Location.Host
 	}
-
+     // 克隆一个req，并且把client ip放到herader淋面
 	clone := utilnet.CloneRequest(req)
 	// Only append X-Forwarded-For in the upgrade path, since httputil.NewSingleHostReverseProxy
 	// handles this in the non-upgrade path.
 	utilnet.AppendForwardedForHeader(clone)
-	if h.InterceptRedirects {
+	if h.InterceptRedirects {  // 自动处理重定向
 		klog.V(6).Infof("Connecting to backend proxy (intercepting redirects) %s\n  Headers: %v", &location, clone.Header)
 		backendConn, rawResponse, err = utilnet.ConnectWithRedirects(req.Method, &location, clone.Header, req.Body, utilnet.DialerFunc(h.DialForUpgrade), h.RequireSameHostRedirects)
 	} else {
@@ -297,7 +298,7 @@ func (h *UpgradeAwareHandler) tryUpgrade(w http.ResponseWriter, req *http.Reques
 			clone.Host = h.Location.Host
 		}
 		clone.URL = &location
-		backendConn, err = h.DialForUpgrade(clone)
+		backendConn, err = h.DialForUpgrade(clone)  // 使用UpgradeTransport发送request
 	}
 	if err != nil {
 		klog.V(6).Infof("Proxy connection error: %v", err)
@@ -305,7 +306,7 @@ func (h *UpgradeAwareHandler) tryUpgrade(w http.ResponseWriter, req *http.Reques
 		return true
 	}
 	defer backendConn.Close()
-
+    // 读出来response
 	// determine the http response code from the backend by reading from rawResponse+backendConn
 	backendHTTPResponse, headerBytes, err := getResponse(io.MultiReader(bytes.NewReader(rawResponse), backendConn))
 	if err != nil {
@@ -321,6 +322,7 @@ func (h *UpgradeAwareHandler) tryUpgrade(w http.ResponseWriter, req *http.Reques
 	// If the backend did not upgrade the request, return an error to the client. If the response was
 	// an error, the error is forwarded directly after the connection is hijacked. Otherwise, just
 	// return a generic error here.
+	// 协议升级失败
 	if backendHTTPResponse.StatusCode != http.StatusSwitchingProtocols && backendHTTPResponse.StatusCode < 400 {
 		err := fmt.Errorf("invalid upgrade response: status code %d", backendHTTPResponse.StatusCode)
 		klog.Errorf("Proxy upgrade error: %v", err)
@@ -413,7 +415,7 @@ func (h *UpgradeAwareHandler) tryUpgrade(w http.ResponseWriter, req *http.Reques
 
 	return true
 }
-
+// 先用UpgradeTransport塞入一些header，然后使用UpgradeTransport发送request
 func (h *UpgradeAwareHandler) DialForUpgrade(req *http.Request) (net.Conn, error) {
 	if h.UpgradeTransport == nil {
 		return dial(req, h.Transport)
@@ -424,7 +426,7 @@ func (h *UpgradeAwareHandler) DialForUpgrade(req *http.Request) (net.Conn, error
 	}
 	return dial(updatedReq, h.UpgradeTransport)
 }
-
+// 从Reader读出来response，返回的是两份数据
 // getResponseCode reads a http response from the given reader, returns the response,
 // the bytes read from the reader, and any error encountered
 func getResponse(r io.Reader) (*http.Response, []byte, error) {
@@ -437,7 +439,7 @@ func getResponse(r io.Reader) (*http.Response, []byte, error) {
 	// return the http response and the raw bytes consumed from the reader in the process
 	return resp, rawResponse.Bytes(), nil
 }
-
+// 使用transport dialurl并且把req写入连接中
 // dial dials the backend at req.URL and writes req to it.
 func dial(req *http.Request, transport http.RoundTripper) (net.Conn, error) {
 	conn, err := dialURL(req.Context(), req.URL, transport)
@@ -452,7 +454,7 @@ func dial(req *http.Request, transport http.RoundTripper) (net.Conn, error) {
 
 	return conn, err
 }
-
+// 用url信息作为重定向数据，wrap一下internalTransport
 func (h *UpgradeAwareHandler) defaultProxyTransport(url *url.URL, internalTransport http.RoundTripper) http.RoundTripper {
 	scheme := url.Scheme
 	host := url.Host
@@ -471,7 +473,7 @@ func (h *UpgradeAwareHandler) defaultProxyTransport(url *url.URL, internalTransp
 		RoundTripper: rewritingTransport,
 	}
 }
-
+// 发请求之前先把跨域相关的干掉
 // corsRemovingTransport is a wrapper for an internal transport. It removes CORS headers
 // from the internal response.
 // Implements pkg/util/net.RoundTripperWrapper

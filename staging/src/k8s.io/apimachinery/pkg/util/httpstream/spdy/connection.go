@@ -31,13 +31,14 @@ import (
 // streams.
 type connection struct {
 	conn             *spdystream.Connection
-	streams          map[uint32]httpstream.Stream
+	streams          map[uint32]httpstream.Stream   // 根据conn创建的所有stream
 	streamLock       sync.Mutex
-	newStreamHandler httpstream.NewStreamHandler
-	ping             func() (time.Duration, error)
+	newStreamHandler httpstream.NewStreamHandler   // 每次创建新的stream就会调用该函数
+	ping             func() (time.Duration, error)  // ping操作
 }
 
 // NewClientConnection creates a new SPDY client connection.
+// 创建一个SPDY客户端连接
 func NewClientConnection(conn net.Conn) (httpstream.Connection, error) {
 	return NewClientConnectionWithPings(conn, 0)
 }

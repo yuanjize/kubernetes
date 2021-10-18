@@ -32,7 +32,7 @@ type Marshaler interface {
 type Unmarshaler interface {
 	UnmarshalQueryParameter(string) error
 }
-
+// 返回json字段名字，和是否omitempty
 func jsonTag(field reflect.StructField) (string, bool) {
 	structTag := field.Tag.Get("json")
 	if len(structTag) == 0 {
@@ -61,7 +61,7 @@ func isPointerKind(kind reflect.Kind) bool {
 func isStructKind(kind reflect.Kind) bool {
 	return kind == reflect.Struct
 }
-
+// 基本类型
 func isValueKind(kind reflect.Kind) bool {
 	switch kind {
 	case reflect.String, reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16,
@@ -73,11 +73,11 @@ func isValueKind(kind reflect.Kind) bool {
 		return false
 	}
 }
-
+// 是否是零值
 func zeroValue(value reflect.Value) bool {
 	return reflect.DeepEqual(reflect.Zero(value.Type()).Interface(), value.Interface())
 }
-
+// 调用MarshalQueryParameter函数
 func customMarshalValue(value reflect.Value) (reflect.Value, bool) {
 	// Return unless we implement a custom query marshaler
 	if !value.CanInterface() {
@@ -85,6 +85,7 @@ func customMarshalValue(value reflect.Value) (reflect.Value, bool) {
 	}
 
 	marshaler, ok := value.Interface().(Marshaler)
+	// 如果他不是Marshaler，那么看看他的指针类型是不是Marshaler
 	if !ok {
 		if !isPointerKind(value.Kind()) && value.CanAddr() {
 			marshaler, ok = value.Addr().Interface().(Marshaler)
@@ -98,10 +99,11 @@ func customMarshalValue(value reflect.Value) (reflect.Value, bool) {
 
 	// Don't invoke functions on nil pointers
 	// If the type implements MarshalQueryParameter, AND the tag is not omitempty, AND the value is a nil pointer, "" seems like a reasonable response
+	// 空指针
 	if isPointerKind(value.Kind()) && zeroValue(value) {
 		return reflect.ValueOf(""), true
 	}
-
+    // 进行mashal
 	// Get the custom marshalled value
 	v, err := marshaler.MarshalQueryParameter()
 	if err != nil {
@@ -109,7 +111,7 @@ func customMarshalValue(value reflect.Value) (reflect.Value, bool) {
 	}
 	return reflect.ValueOf(v), true
 }
-
+// omitempty的参数不会添加到values中
 func addParam(values url.Values, tag string, omitempty bool, value reflect.Value) {
 	if omitempty && zeroValue(value) {
 		return
@@ -122,7 +124,7 @@ func addParam(values url.Values, tag string, omitempty bool, value reflect.Value
 	}
 	values.Add(tag, val)
 }
-
+// 添加list类型参数
 func addListOfParams(values url.Values, tag string, omitempty bool, list reflect.Value) {
 	for i := 0; i < list.Len(); i++ {
 		addParam(values, tag, omitempty, list.Index(i))
@@ -132,6 +134,8 @@ func addListOfParams(values url.Values, tag string, omitempty bool, list reflect
 // Convert takes an object and converts it to a url.Values object using JSON tags as
 // parameter names. Only top-level simple values, arrays, and slices are serialized.
 // Embedded structs, maps, etc. will not be serialized.
+// 根据jsontag encode字段
+// 把obj的值encode到url.Values中。只会encode顶层的简单类型，数组和切片。嵌入字段和map不会序列化
 func Convert(obj interface{}) (url.Values, error) {
 	result := url.Values{}
 	if obj == nil {
@@ -154,7 +158,7 @@ func Convert(obj interface{}) (url.Values, error) {
 
 	return result, nil
 }
-
+// 把sv的值encode到result中
 func convertStruct(result url.Values, st reflect.Type, sv reflect.Value) {
 	for i := 0; i < st.NumField(); i++ {
 		field := sv.Field(i)
@@ -177,12 +181,15 @@ func convertStruct(result url.Values, st reflect.Type, sv reflect.Value) {
 		}
 
 		switch {
+		// 普通类型
 		case isValueKind(kind):
 			addParam(result, tag, omitempty, field)
 		case kind == reflect.Array || kind == reflect.Slice:
+			// 切片的元素是基本类型
 			if isValueKind(ft.Elem().Kind()) {
 				addListOfParams(result, tag, omitempty, field)
 			}
+			// 结构体类型，如果它实现了Marshaler接口那么直接encode，否则递归调用
 		case isStructKind(kind) && !(zeroValue(field) && omitempty):
 			if marshalValue, ok := customMarshalValue(field); ok {
 				addParam(result, tag, omitempty, marshalValue)

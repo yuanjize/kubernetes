@@ -34,10 +34,12 @@ const (
 // NewStreamHandler defines a function that is called when a new Stream is
 // received. If no error is returned, the Stream is accepted; otherwise,
 // the stream is rejected. After the reply frame has been sent, replySent is closed.
+// 当创建一个stream的时候会回调该函数
 type NewStreamHandler func(stream Stream, replySent <-chan struct{}) error
 
 // NoOpNewStreamHandler is a stream handler that accepts a new stream and
 // performs no other logic.
+// 该函数就是上面那个类型的，啥都没做
 func NoOpNewStreamHandler(stream Stream, replySent <-chan struct{}) error { return nil }
 
 // Dialer knows how to open a streaming connection to a server.
@@ -68,6 +70,7 @@ type ResponseUpgrader interface {
 }
 
 // Connection represents an upgraded HTTP connection.
+// Connection 代表一个升级了的htttp连接，spdy/connection实现了该接口
 type Connection interface {
 	// CreateStream creates a new Stream with the supplied headers.
 	CreateStream(headers http.Header) (Stream, error)
@@ -94,7 +97,7 @@ type Stream interface {
 	// Identifier returns the stream's ID.
 	Identifier() uint32
 }
-
+// 是否包含connection:upgrade 这个header，他代表是否要进行协议升级
 // IsUpgradeRequest returns true if the given request is a connection upgrade request
 func IsUpgradeRequest(req *http.Request) bool {
 	for _, h := range req.Header[http.CanonicalHeaderKey(HeaderConnection)] {
@@ -104,7 +107,7 @@ func IsUpgradeRequest(req *http.Request) bool {
 	}
 	return false
 }
-
+// 找到第一个交集
 func negotiateProtocol(clientProtocols, serverProtocols []string) string {
 	for i := range clientProtocols {
 		for j := range serverProtocols {
@@ -115,7 +118,7 @@ func negotiateProtocol(clientProtocols, serverProtocols []string) string {
 	}
 	return ""
 }
-
+// flat操作
 func commaSeparatedHeaderValues(header []string) []string {
 	var parsedClientProtocols []string
 	for i := range header {
@@ -134,6 +137,7 @@ func commaSeparatedHeaderValues(header []string) []string {
 // indicating the chosen subprotocol. If no match is found, HTTP forbidden is
 // returned, along with a response header containing the list of protocols the
 // server can accept.
+// 就是找到请求中和serverProtocols共同支持的协议版本写到header中
 func Handshake(req *http.Request, w http.ResponseWriter, serverProtocols []string) (string, error) {
 	clientProtocols := commaSeparatedHeaderValues(req.Header[http.CanonicalHeaderKey(HeaderProtocolVersion)])
 	if len(clientProtocols) == 0 {

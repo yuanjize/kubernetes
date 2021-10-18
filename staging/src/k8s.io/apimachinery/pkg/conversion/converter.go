@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"reflect"
 )
-
+// 类型转换，用来吧source转换成dest
 type typePair struct {
 	source reflect.Type
 	dest   reflect.Type
@@ -34,6 +34,7 @@ var DefaultNameFunc = func(t reflect.Type) string { return t.Name() }
 // or pointers if necessary. It should return an error if the object cannot be converted
 // or if some data is invalid. If you do not wish a and b to share fields or nested
 // objects, you must copy a before calling this function.
+// 把a中的数据转换成b，scope用来传递一个额外的数据
 type ConversionFunc func(a, b interface{}, scope Scope) error
 
 // Converter knows how to convert one type to another.
@@ -44,12 +45,14 @@ type Converter struct {
 	generatedConversionFuncs ConversionFuncs
 
 	// Set of conversions that should be treated as a no-op
-	ignoredConversions        map[typePair]struct{}
-	ignoredUntypedConversions map[typePair]struct{}
+	// 如果类型在下面这个两个map中，那么就直接忽略，不进行类型转换
+	ignoredConversions        map[typePair]struct{}  // 指针指向的元素类型
+	ignoredUntypedConversions map[typePair]struct{}  // 指针类型
 
 	// nameFunc is called to retrieve the name of a type; this name is used for the
 	// purpose of deciding whether two types match or not (i.e., will we attempt to
 	// do a conversion). The default returns the go type name.
+	// 该函数会返回字段类型的名字，用来判断是否两个类型匹配
 	nameFunc func(t reflect.Type) string
 }
 
@@ -62,6 +65,7 @@ func NewConverter(nameFn NameFunc) *Converter {
 		ignoredUntypedConversions: make(map[typePair]struct{}),
 		nameFunc:                  nameFn,
 	}
+	// 注册字节转化函数
 	c.RegisterUntypedConversionFunc(
 		(*[]byte)(nil), (*[]byte)(nil),
 		func(a, b interface{}, s Scope) error {
@@ -73,6 +77,7 @@ func NewConverter(nameFn NameFunc) *Converter {
 
 // WithConversions returns a Converter that is a copy of c but with the additional
 // fns merged on top.
+// 把fns和当前Converter的conversionFuncs合并，并生成一个新的Converter
 func (c *Converter) WithConversions(fns ConversionFuncs) *Converter {
 	copied := *c
 	copied.conversionFuncs = c.conversionFuncs.Merge(fns)
@@ -80,10 +85,11 @@ func (c *Converter) WithConversions(fns ConversionFuncs) *Converter {
 }
 
 // DefaultMeta returns meta for a given type.
+// 返回一个空的meta
 func (c *Converter) DefaultMeta(t reflect.Type) *Meta {
 	return &Meta{}
 }
-
+// 字符串深拷贝
 // Convert_Slice_byte_To_Slice_byte prevents recursing into every byte
 func Convert_Slice_byte_To_Slice_byte(in *[]byte, out *[]byte, s Scope) error {
 	if *in == nil {
@@ -112,7 +118,7 @@ func NewConversionFuncs() ConversionFuncs {
 		untyped: make(map[typePair]ConversionFunc),
 	}
 }
-
+// ConversionFuncs 记录了三种信息，key记录了要进行转换的两种类型，value是用来进行转换的函数
 type ConversionFuncs struct {
 	untyped map[typePair]ConversionFunc
 }
@@ -120,6 +126,7 @@ type ConversionFuncs struct {
 // AddUntyped adds the provided conversion function to the lookup table for the types that are
 // supplied as a and b. a and b must be pointers or an error is returned. This method overwrites
 // previously defined functions.
+// 添加一些类型转换函数
 func (c ConversionFuncs) AddUntyped(a, b interface{}, fn ConversionFunc) error {
 	tA, tB := reflect.TypeOf(a), reflect.TypeOf(b)
 	if tA.Kind() != reflect.Ptr {
@@ -134,6 +141,7 @@ func (c ConversionFuncs) AddUntyped(a, b interface{}, fn ConversionFunc) error {
 
 // Merge returns a new ConversionFuncs that contains all conversions from
 // both other and c, with other conversions taking precedence.
+// 把当前ConversionFuncs和other merge起来并返回
 func (c ConversionFuncs) Merge(other ConversionFuncs) ConversionFuncs {
 	merged := NewConversionFuncs()
 	for k, v := range c.untyped {
@@ -170,6 +178,7 @@ func (s *scope) Meta() *Meta {
 // RegisterUntypedConversionFunc registers a function that converts between a and b by passing objects of those
 // types to the provided function. The function *must* accept objects of a and b - this machinery will not enforce
 // any other guarantee.
+// 注册结构转换函数到conversionFuncs，使用函数fn类型a的对象转换成b类型
 func (c *Converter) RegisterUntypedConversionFunc(a, b interface{}, fn ConversionFunc) error {
 	return c.conversionFuncs.AddUntyped(a, b, fn)
 }
@@ -177,6 +186,7 @@ func (c *Converter) RegisterUntypedConversionFunc(a, b interface{}, fn Conversio
 // RegisterGeneratedUntypedConversionFunc registers a function that converts between a and b by passing objects of those
 // types to the provided function. The function *must* accept objects of a and b - this machinery will not enforce
 // any other guarantee.
+// 注册结构转换函数到generatedConversionFuncs，使用函数fn类型a的对象转换成b类型
 func (c *Converter) RegisterGeneratedUntypedConversionFunc(a, b interface{}, fn ConversionFunc) error {
 	return c.generatedConversionFuncs.AddUntyped(a, b, fn)
 }
