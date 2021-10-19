@@ -26,7 +26,9 @@ import (
 
 	"k8s.io/apimachinery/pkg/conversion"
 )
-
+/*
+  一堆给converter用的类型转换函数
+*/
 // DefaultMetaV1FieldSelectorConversion auto-accepts metav1 values for name and namespace.
 // A cluster scoped resource specifying namespace empty works fine and specifying a particular
 // namespace will return no results, as expected.

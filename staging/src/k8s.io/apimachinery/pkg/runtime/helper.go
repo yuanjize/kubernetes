@@ -48,6 +48,7 @@ func UnsafeObjectConvertor(scheme *Scheme) ObjectConvertor {
 
 // SetField puts the value of src, into fieldName, which must be a member of v.
 // The value of src must be assignable to the field.
+// 把src的值付给v的fieldName字段： v.fieldName=src
 func SetField(src interface{}, v reflect.Value, fieldName string) error {
 	field := v.FieldByName(fieldName)
 	if !field.IsValid() {
@@ -67,6 +68,7 @@ func SetField(src interface{}, v reflect.Value, fieldName string) error {
 
 // Field puts the value of fieldName, which must be a member of v, into dest,
 // which must be a variable to which this field's value can be assigned.
+// 设置 dest=v.fieldName
 func Field(v reflect.Value, fieldName string, dest interface{}) error {
 	field := v.FieldByName(fieldName)
 	if !field.IsValid() {
@@ -90,6 +92,7 @@ func Field(v reflect.Value, fieldName string, dest interface{}) error {
 // FieldPtr puts the address of fieldName, which must be a member of v,
 // into dest, which must be an address of a variable to which this field's
 // address can be assigned.
+// 设置 dest=&v.fieldName，dest需要是一个二级指针
 func FieldPtr(v reflect.Value, fieldName string, dest interface{}) error {
 	field := v.FieldByName(fieldName)
 	if !field.IsValid() {
@@ -113,6 +116,7 @@ func FieldPtr(v reflect.Value, fieldName string, dest interface{}) error {
 
 // EncodeList ensures that each object in an array is converted to a Unknown{} in serialized form.
 // TODO: accept a content type.
+// 把objects每个元素都encode然后转换成unknown类型
 func EncodeList(e Encoder, objects []Object) error {
 	var errs []error
 	for i := range objects {
@@ -127,6 +131,7 @@ func EncodeList(e Encoder, objects []Object) error {
 	return errors.NewAggregate(errs)
 }
 
+// decodeListItem 尝试把Unknown decode成为具体的Object
 func decodeListItem(obj *Unknown, decoders []Decoder) (Object, error) {
 	for _, decoder := range decoders {
 		// TODO: Decode based on ContentType.
@@ -141,6 +146,7 @@ func decodeListItem(obj *Unknown, decoders []Decoder) (Object, error) {
 	}
 	// could not decode, so leave the object as Unknown, but give the decoders the
 	// chance to set Unknown.TypeMeta if it is available.
+	// 上面decccode失败，会调用下面的代码最起码把TypeMeta decode出来
 	for _, decoder := range decoders {
 		if err := DecodeInto(decoder, obj.Raw, obj); err == nil {
 			return obj, nil
@@ -152,6 +158,7 @@ func decodeListItem(obj *Unknown, decoders []Decoder) (Object, error) {
 // DecodeList alters the list in place, attempting to decode any objects found in
 // the list that have the Unknown type. Any errors that occur are returned
 // after the entire list is processed. Decoders are tried in order.
+// 使用decoders尝试把objects中所有的Unknown decode为具体的object
 func DecodeList(objects []Object, decoders ...Decoder) []error {
 	errs := []error(nil)
 	for i, obj := range objects {
@@ -212,6 +219,7 @@ func (defaultFramer) NewFrameReader(r io.ReadCloser) io.ReadCloser { return r }
 func (defaultFramer) NewFrameWriter(w io.Writer) io.Writer         { return w }
 
 // WithVersionEncoder serializes an object and ensures the GVK is set.
+/*encode的时候确保GroupVersionKind被设置*/
 type WithVersionEncoder struct {
 	Version GroupVersioner
 	Encoder
@@ -243,6 +251,9 @@ func (e WithVersionEncoder) Encode(obj Object, stream io.Writer) error {
 }
 
 // WithoutVersionDecoder clears the group version kind of a deserialized object.
+/*
+  WithoutVersionDecoder decode数据才出来之后，把GroupVersionKind设为空
+*/
 type WithoutVersionDecoder struct {
 	Decoder
 }

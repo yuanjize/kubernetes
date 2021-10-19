@@ -222,17 +222,20 @@ type ObjectVersioner interface {
 }
 
 // ObjectConvertor converts an object to a different version.
+// 用来给对象转换版本
 type ObjectConvertor interface {
 	// Convert attempts to convert one object into another, or returns an error. This
 	// method does not mutate the in object, but the in and out object might share data structures,
 	// i.e. the out object cannot be mutated without mutating the in object as well.
 	// The context argument will be passed to all nested conversions.
+	// 把in数据转换成out数据
 	Convert(in, out, context interface{}) error
 	// ConvertToVersion takes the provided object and converts it the provided version. This
 	// method does not mutate the in object, but the in and out object might share data structures,
 	// i.e. the out object cannot be mutated without mutating the in object as well.
 	// This method is similar to Convert() but handles specific details of choosing the correct
 	// output version.
+	// 把in对象转换成GroupVersioner指定版本的对象
 	ConvertToVersion(in Object, gv GroupVersioner) (out Object, err error)
 	ConvertFieldLabel(gvk schema.GroupVersionKind, label, value string) (string, string, error)
 }
@@ -256,6 +259,7 @@ type ObjectCreater interface {
 }
 
 // EquivalentResourceMapper provides information about resources that address the same underlying data as a specified resource
+// 看起来是找引用相同底层资源的Resource
 type EquivalentResourceMapper interface {
 	// EquivalentResourcesFor returns a list of resources that address the same underlying data as resource.
 	// If subresource is specified, only equivalent resources which also have the same subresource are included.
@@ -263,11 +267,15 @@ type EquivalentResourceMapper interface {
 	EquivalentResourcesFor(resource schema.GroupVersionResource, subresource string) []schema.GroupVersionResource
 	// KindFor returns the kind expected by the specified resource[/subresource].
 	// A zero value is returned if the kind is unknown.
+	// 找Kind
 	KindFor(resource schema.GroupVersionResource, subresource string) schema.GroupVersionKind
 }
 
 // EquivalentResourceRegistry provides an EquivalentResourceMapper interface,
 // and allows registering known resource[/subresource] -> kind
+/*
+ 实现了EquivalentResourceMapper接口，并且可以注册资源到mapper
+*/
 type EquivalentResourceRegistry interface {
 	EquivalentResourceMapper
 	// RegisterKindFor registers the existence of the specified resource[/subresource] along with its expected kind.

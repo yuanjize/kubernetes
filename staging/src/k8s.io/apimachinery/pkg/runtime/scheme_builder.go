@@ -15,7 +15,9 @@ limitations under the License.
 */
 
 package runtime
-
+/*
+  提供了一组函数，调用AddToScheme的时候会传入一个Scheme，会把schema作为参数调用这些函数
+*/
 // SchemeBuilder collects functions that add things to a scheme. It's to allow
 // code to compile without explicitly referencing generated types. You should
 // declare one in each package that will have generated deep copy or conversion

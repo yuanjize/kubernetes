@@ -25,13 +25,17 @@ import (
 type equivalentResourceRegistry struct {
 	// keyFunc computes a key for the specified resource (this allows honoring colocated resources across API groups).
 	// if null, or if "" is returned, resource.String() is used as the key
+	// 一个函数，根据 GroupResource算出来一个key
 	keyFunc func(resource schema.GroupResource) string
 	// resources maps key -> subresource -> equivalent resources (subresource is not included in the returned resources).
 	// main resources are stored with subresource="".
+	// key -> subresource -> equivalent resources
 	resources map[string]map[string][]schema.GroupVersionResource
 	// kinds maps resource -> subresource -> kind
+	// GroupVersionResource映射到subresource map，最底层是Kind
 	kinds map[schema.GroupVersionResource]map[string]schema.GroupVersionKind
 	// keys caches the computed key for each GroupResource
+	// 用来获取GroupResource对应的key
 	keys map[schema.GroupResource]string
 
 	mutex sync.RWMutex
@@ -51,17 +55,21 @@ func NewEquivalentResourceRegistry() EquivalentResourceRegistry {
 func NewEquivalentResourceRegistryWithIdentity(keyFunc func(schema.GroupResource) string) EquivalentResourceRegistry {
 	return &equivalentResourceRegistry{keyFunc: keyFunc}
 }
-
+// EquivalentResourcesFor 获取等价的GroupVersionResource
 func (r *equivalentResourceRegistry) EquivalentResourcesFor(resource schema.GroupVersionResource, subresource string) []schema.GroupVersionResource {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
 	return r.resources[r.keys[resource.GroupResource()]][subresource]
 }
+
+// KindFor 获取对应的的GroupVersionKind
 func (r *equivalentResourceRegistry) KindFor(resource schema.GroupVersionResource, subresource string) schema.GroupVersionKind {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
 	return r.kinds[resource][subresource]
 }
+
+// RegisterKindFor 写资源到equivalentResourceRegistry的那堆map
 func (r *equivalentResourceRegistry) RegisterKindFor(resource schema.GroupVersionResource, subresource string, kind schema.GroupVersionKind) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()

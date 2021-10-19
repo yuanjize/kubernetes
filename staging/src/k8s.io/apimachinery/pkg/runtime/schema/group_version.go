@@ -93,6 +93,7 @@ func ParseGroupResource(gr string) GroupResource {
 
 // GroupVersionResource unambiguously identifies a resource.  It doesn't anonymously include GroupVersion
 // to avoid automatic coercion.  It doesn't use a GroupVersion to avoid custom marshalling
+// 就是资源id
 type GroupVersionResource struct {
 	Group    string
 	Version  string

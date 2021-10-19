@@ -15,7 +15,10 @@ limitations under the License.
 */
 
 package runtime
-
+/*
+    TypeMeta: 是所有API对象的基类，有两个字段一个是版本号，一个是Kind
+    RawExtension: APi对象的外部表示是先写到这个里面，然后根据具体对象类型去unmashal，如果找不到具体的对象类型就到Unknown Object里面
+*/
 // Note that the types provided in this file are not versioned and are intended to be
 // safe to use from within all versions of every API object.
 

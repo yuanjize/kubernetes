@@ -100,7 +100,7 @@ type unstructuredConverter struct {
 	// If true, we will be additionally running conversion via json
 	// to ensure that the result is true.
 	// This is supposed to be set only in tests.
-	mismatchDetection bool
+	mismatchDetection bool  // 该值为true会直接使用json进行深拷贝
 	// comparison is the default test logic used to compare
 	comparison conversion.Equalities
 }
@@ -117,6 +117,7 @@ func NewTestUnstructuredConverter(comparison conversion.Equalities) Unstructured
 
 // FromUnstructured converts an object from map[string]interface{} representation into a concrete type.
 // It uses encoding/json/Unmarshaler if object implements it or reflection if not.
+// 把map[string]interface{}的值转换到obj中
 func (c *unstructuredConverter) FromUnstructured(u map[string]interface{}, obj interface{}) error {
 	t := reflect.TypeOf(obj)
 	value := reflect.ValueOf(obj)
@@ -136,7 +137,7 @@ func (c *unstructuredConverter) FromUnstructured(u map[string]interface{}, obj i
 	}
 	return err
 }
-
+// 直接用json进行深拷贝
 func fromUnstructuredViaJSON(u map[string]interface{}, obj interface{}) error {
 	data, err := json.Marshal(u)
 	if err != nil {
@@ -144,7 +145,7 @@ func fromUnstructuredViaJSON(u map[string]interface{}, obj interface{}) error {
 	}
 	return json.Unmarshal(data, obj)
 }
-
+// 把sv的值转换到dv中
 func fromUnstructured(sv, dv reflect.Value) error {
 	sv = unwrapInterface(sv)
 	if !sv.IsValid() {
@@ -267,7 +268,7 @@ func fieldInfoFromField(structType reflect.Type, field int) *fieldInfo {
 	fieldCache.value.Store(newFieldCacheMap)
 	return info
 }
-
+// 如果是interface类型，那么拿到interface实际的类型
 func unwrapInterface(v reflect.Value) reflect.Value {
 	for v.Kind() == reflect.Interface {
 		v = v.Elem()
@@ -401,6 +402,9 @@ func interfaceFromUnstructured(sv, dv reflect.Value) error {
 
 // ToUnstructured converts an object into map[string]interface{} representation.
 // It uses encoding/json/Marshaler if object implements it or reflection if not.
+/*
+   把obj的数据转换到map[string]interface{}中
+*/
 func (c *unstructuredConverter) ToUnstructured(obj interface{}) (map[string]interface{}, error) {
 	var u map[string]interface{}
 	var err error
@@ -441,6 +445,7 @@ func DeepCopyJSON(x map[string]interface{}) map[string]interface{} {
 // DeepCopyJSONValue deep copies the passed value, assuming it is a valid JSON representation i.e. only contains
 // types produced by json.Unmarshal() and also int64.
 // bool, int64, float64, string, []interface{}, map[string]interface{}, json.Number and nil
+// 对字段进行深拷贝
 func DeepCopyJSONValue(x interface{}) interface{} {
 	switch x := x.(type) {
 	case map[string]interface{}:

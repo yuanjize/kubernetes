@@ -21,7 +21,9 @@ import (
 	"encoding/json"
 	"errors"
 )
-
+/*
+   定义RawExtension的json序列化和反序列化函数
+*/
 func (re *RawExtension) UnmarshalJSON(in []byte) error {
 	if re == nil {
 		return errors.New("runtime.RawExtension: UnmarshalJSON on nil pointer")
