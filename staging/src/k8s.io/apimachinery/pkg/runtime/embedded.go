@@ -70,6 +70,10 @@ func NewEncodableList(e Encoder, objects []Object, versions ...schema.GroupVersi
 	return out
 }
 
+/*
+  定义了JSON序列化函数，对于UnKnown这个Object来说没有做啥动作，就是原始的读写Raw数组
+*/
+
 func (e *Unknown) UnmarshalJSON(in []byte) error {
 	if e == nil {
 		return errors.New("runtime.Unknown: UnmarshalJSON on nil pointer")
@@ -93,7 +97,9 @@ func (e Unknown) MarshalJSON() ([]byte, error) {
 	}
 	return e.Raw, nil
 }
-
+/*
+   Convert_runtime_Object_To_runtime_RawExtension Object转换到RawExtension中
+*/
 func Convert_runtime_Object_To_runtime_RawExtension(in *Object, out *RawExtension, s conversion.Scope) error {
 	if in == nil {
 		out.Raw = []byte("null")
@@ -133,7 +139,9 @@ func Convert_runtime_RawExtension_To_runtime_Object(in *RawExtension, out *Objec
 	}
 	return nil
 }
-
+/*
+RegisterEmbeddedConversions 注册 RawExtension和 Object互相转换的函数到converter中
+*/
 func RegisterEmbeddedConversions(s *Scheme) error {
 	if err := s.AddConversionFunc((*Object)(nil), (*RawExtension)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_runtime_Object_To_runtime_RawExtension(a.(*Object), b.(*RawExtension), scope)

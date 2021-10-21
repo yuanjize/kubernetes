@@ -32,6 +32,23 @@ import (
 	"k8s.io/klog/v2"
 )
 
+/*
+Serializer=Codec
+  1.定义一些Codec的实现codec
+  2.定义一些decode和encode的工具函数
+  3.定义Serialize的实现
+      NoopEncoder，实现了Decode，Encode是一个空函数
+      NoopDecoder，实现了Encode，Decode是一个空函数
+      base64Serializer，encode之后要进行base64，decode之前要进行base64
+  3.实现ParameterCodec接口
+     parameterCodec用来对Object和url.Value之间相互转换
+
+  4.三个GroupVersioner实现
+   InternalGroupVersioner 优先返回内部版本的GV
+   DisabledGroupVersioner 总是拒绝传给他的GV
+   multiGroupVersioner 直接看注释demo
+*/
+
 // codec binds an encoder and decoder.
 type codec struct {
 	Encoder
@@ -44,6 +61,7 @@ func NewCodec(e Encoder, d Decoder) Codec {
 }
 
 // Encode is a convenience wrapper for encoding to a []byte from an Encoder
+// 工具函数，把object encode成字节切片
 func Encode(e Encoder, obj Object) ([]byte, error) {
 	// TODO: reuse buffer
 	buf := &bytes.Buffer{}
@@ -54,12 +72,14 @@ func Encode(e Encoder, obj Object) ([]byte, error) {
 }
 
 // Decode is a convenience wrapper for decoding data into an Object.
+// 工具函数把字节切片decode到Object中
 func Decode(d Decoder, data []byte) (Object, error) {
 	obj, _, err := d.Decode(data, nil, nil)
 	return obj, err
 }
 
 // DecodeInto performs a Decode into the provided object.
+// 工具函数把数据decode到Object对象中
 func DecodeInto(d Decoder, data []byte, into Object) error {
 	out, gvk, err := d.Decode(data, nil, into)
 	if err != nil {
@@ -72,6 +92,7 @@ func DecodeInto(d Decoder, data []byte, into Object) error {
 }
 
 // EncodeOrDie is a version of Encode which will panic instead of returning an error. For tests.
+// encode Object，如果失败那么直接panic
 func EncodeOrDie(e Encoder, obj Object) string {
 	bytes, err := Encode(e, obj)
 	if err != nil {
@@ -82,6 +103,7 @@ func EncodeOrDie(e Encoder, obj Object) string {
 
 // UseOrCreateObject returns obj if the canonical ObjectKind returned by the provided typer matches gvk, or
 // invokes the ObjectCreator to instantiate a new gvk. Returns an error if the typer cannot find the object.
+// 得到一个符合GroupVersionKind的Object
 func UseOrCreateObject(t ObjectTyper, c ObjectCreater, gvk schema.GroupVersionKind, obj Object) (Object, error) {
 	if obj != nil {
 		kinds, _, err := t.ObjectKinds(obj)
@@ -98,6 +120,7 @@ func UseOrCreateObject(t ObjectTyper, c ObjectCreater, gvk schema.GroupVersionKi
 }
 
 // NoopEncoder converts an Decoder to a Serializer or Codec for code that expects them but only uses decoding.
+// 实现了CodeC接口，但是只有decode功能是正常的，Encode功能是空实现
 type NoopEncoder struct {
 	Decoder
 }
@@ -118,6 +141,7 @@ func (n NoopEncoder) Identifier() Identifier {
 }
 
 // NoopDecoder converts an Encoder to a Serializer or Codec for code that expects them but only uses encoding.
+// 实现了CodeC接口，但是只有encode功能是正常的，decode功能是空实现
 type NoopDecoder struct {
 	Encoder
 }
@@ -150,6 +174,7 @@ var _ ParameterCodec = &parameterCodec{}
 
 // DecodeParameters converts the provided url.Values into an object of type From with the kind of into, and then
 // converts that object to into (if necessary). Returns an error if the operation cannot be completed.
+// url.Values转换为Object
 func (c *parameterCodec) DecodeParameters(parameters url.Values, from schema.GroupVersion, into Object) error {
 	if len(parameters) == 0 {
 		return nil
@@ -187,6 +212,7 @@ func (c *parameterCodec) DecodeParameters(parameters url.Values, from schema.Gro
 
 // EncodeParameters converts the provided object into the to version, then converts that object to url.Values.
 // Returns an error if conversion is not possible.
+// Object encode到url.values中
 func (c *parameterCodec) EncodeParameters(obj Object, to schema.GroupVersion) (url.Values, error) {
 	gvks, _, err := c.typer.ObjectKinds(obj)
 	if err != nil {
@@ -202,7 +228,9 @@ func (c *parameterCodec) EncodeParameters(obj Object, to schema.GroupVersion) (u
 	}
 	return queryparams.Convert(obj)
 }
-
+/*
+  数据encode之后进行base64才是最终数据
+*/
 type base64Serializer struct {
 	Encoder
 	Decoder
@@ -231,7 +259,7 @@ func identifier(e Encoder) Identifier {
 	}
 	return Identifier(identifier)
 }
-
+// Encode encode Object并写入到stream中
 func (s base64Serializer) Encode(obj Object, stream io.Writer) error {
 	if co, ok := obj.(CacheableObject); ok {
 		return co.CacheEncode(s.Identifier(), s.doEncode, stream)
@@ -251,6 +279,7 @@ func (s base64Serializer) Identifier() Identifier {
 	return s.identifier
 }
 
+// Decode decode到Object中
 func (s base64Serializer) Decode(data []byte, defaults *schema.GroupVersionKind, into Object) (Object, *schema.GroupVersionKind, error) {
 	out := make([]byte, base64.StdEncoding.DecodedLen(len(data)))
 	n, err := base64.StdEncoding.Decode(out, data)
@@ -262,6 +291,7 @@ func (s base64Serializer) Decode(data []byte, defaults *schema.GroupVersionKind,
 
 // SerializerInfoForMediaType returns the first info in types that has a matching media type (which cannot
 // include media-type parameters), or the first info with an empty media type, or false if no type matches.
+// 返回types中和mediaType匹配的SerializerInfo
 func SerializerInfoForMediaType(types []SerializerInfo, mediaType string) (SerializerInfo, bool) {
 	for _, info := range types {
 		if info.MediaType == mediaType {
@@ -278,8 +308,10 @@ func SerializerInfoForMediaType(types []SerializerInfo, mediaType string) (Seria
 
 var (
 	// InternalGroupVersioner will always prefer the internal version for a given group version kind.
+	// 如果参数有内部版本优先返回内部版本
 	InternalGroupVersioner GroupVersioner = internalGroupVersioner{}
 	// DisabledGroupVersioner will reject all kinds passed to it.
+	// 总是拒绝传给他的所有版本
 	DisabledGroupVersioner GroupVersioner = disabledGroupVersioner{}
 )
 
@@ -291,6 +323,7 @@ const (
 type internalGroupVersioner struct{}
 
 // KindForGroupVersionKinds returns an internal Kind if one is found, or converts the first provided kind to the internal version.
+// 找到内部版本就返回内部版本，没有内部版本就把找到的第一个版本设置为内部版本然后返回
 func (internalGroupVersioner) KindForGroupVersionKinds(kinds []schema.GroupVersionKind) (schema.GroupVersionKind, bool) {
 	for _, kind := range kinds {
 		if kind.Version == APIVersionInternal {
@@ -311,6 +344,7 @@ func (internalGroupVersioner) Identifier() string {
 type disabledGroupVersioner struct{}
 
 // KindForGroupVersionKinds returns false for any input.
+// 总返回false
 func (disabledGroupVersioner) KindForGroupVersionKinds(kinds []schema.GroupVersionKind) (schema.GroupVersionKind, bool) {
 	return schema.GroupVersionKind{}, false
 }
@@ -333,6 +367,7 @@ type multiGroupVersioner struct {
 
 // NewMultiGroupVersioner returns the provided group version for any kind that matches one of the provided group kinds.
 // Kind may be empty in the provided group kind, in which case any kind will match.
+// 一种GroupVersioner接口，具体实现看下面的注释就可以
 func NewMultiGroupVersioner(gv schema.GroupVersion, groupKinds ...schema.GroupKind) GroupVersioner {
 	if len(groupKinds) == 0 || (len(groupKinds) == 1 && groupKinds[0].Group == gv.Group) {
 		return gv

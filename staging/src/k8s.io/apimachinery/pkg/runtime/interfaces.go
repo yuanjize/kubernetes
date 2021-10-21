@@ -40,6 +40,7 @@ type GroupVersioner interface {
 	// Identifier returns string representation of the object.
 	// Identifiers of two different encoders should be equal only if for every input
 	// kinds they return the same result.
+	// 该对象的ID，只有只有当两中实现的输入输出相同的时候id才会想通
 	Identifier() string
 }
 
@@ -49,6 +50,7 @@ type GroupVersioner interface {
 type Identifier string
 
 // Encoder writes objects to a serialized form
+// 把Object encode并写到writer中
 type Encoder interface {
 	// Encode writes an object to a stream. Implementations may return errors if the versions are
 	// incompatible, or if no conversion is defined.
@@ -70,6 +72,7 @@ type Encoder interface {
 }
 
 // Decoder attempts to load an object from data.
+// 把data decode到Object中，返回的GroupVersionKind是data中的version
 type Decoder interface {
 	// Decode attempts to deserialize the provided data using either the innate typing of the scheme or the
 	// default kind, group, and version provided. It returns a decoded object as well as the kind, group, and
@@ -83,6 +86,7 @@ type Decoder interface {
 
 // Serializer is the core interface for transforming objects into a serialized format and back.
 // Implementations may choose to perform conversion of the object, but no assumptions should be made.
+// 同时提供encode和decode接口
 type Serializer interface {
 	Encoder
 	Decoder
@@ -91,16 +95,20 @@ type Serializer interface {
 // Codec is a Serializer that deals with the details of versioning objects. It offers the same
 // interface as Serializer, so this is a marker to consumers that care about the version of the objects
 // they receive.
+// Codec和Serializer等价,但是会处理一些版本细节
 type Codec Serializer
 
 // ParameterCodec defines methods for serializing and deserializing API objects to url.Values and
 // performing any necessary conversion. Unlike the normal Codec, query parameters are not self describing
 // and the desired version must be specified.
+// 用来在url.Value和Object中进行相互转换
 type ParameterCodec interface {
 	// DecodeParameters takes the given url.Values in the specified group version and decodes them
 	// into the provided object, or returns an error.
+	// 把parameters decode到指定版本的Object中
 	DecodeParameters(parameters url.Values, from schema.GroupVersion, into Object) error
 	// EncodeParameters encodes the provided object as query parameters or returns an error.
+	// encode Object对象到url参数中
 	EncodeParameters(obj Object, to schema.GroupVersion) (url.Values, error)
 }
 
@@ -111,6 +119,7 @@ type Framer interface {
 }
 
 // SerializerInfo contains information about a specific serialization format
+// 序列化的相关信息
 type SerializerInfo struct {
 	// MediaType is the value that represents this serializer over the wire.
 	MediaType string
@@ -131,6 +140,7 @@ type SerializerInfo struct {
 }
 
 // StreamSerializerInfo contains information about a specific stream serialization format
+// 流序列化器的信息
 type StreamSerializerInfo struct {
 	// EncodesAsText indicates this serializer can be encoded to UTF-8 safely.
 	EncodesAsText bool

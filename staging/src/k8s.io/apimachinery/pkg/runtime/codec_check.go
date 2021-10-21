@@ -28,6 +28,7 @@ import (
 // decode all of the external types listed, and also decode them into the given
 // object. (Will modify internalObject.) (Assumes JSON serialization.)
 // TODO: verify that the correct external version is chosen on encode...
+// 检测 Codec是否可以正常decode各个GroupVersionKind版本的Object对象，deccode出来的对象是否是internalType类型，并且可以decode到internalType中
 func CheckCodec(c Codec, internalType Object, externalTypes ...schema.GroupVersionKind) error {
 	if _, err := Encode(c, internalType); err != nil {
 		return fmt.Errorf("Internal type not encodable: %v", err)

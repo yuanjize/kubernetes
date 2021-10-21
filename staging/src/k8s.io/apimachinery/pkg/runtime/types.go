@@ -114,6 +114,7 @@ type RawExtension struct {
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +protobuf=true
 // +k8s:openapi-gen=true
+// 表示不知道具体是什么类型的Object
 type Unknown struct {
 	TypeMeta `json:",inline" protobuf:"bytes,1,opt,name=typeMeta"`
 	// Raw will hold the complete serialized object which couldn't be matched
