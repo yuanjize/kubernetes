@@ -35,6 +35,7 @@ const (
 )
 
 // CapacityFromMachineInfo returns the capacity of the resources from the machine info.
+// 获取一些资源信息，包括CPU容量，内存容量，hugePages容量
 func CapacityFromMachineInfo(info *cadvisorapi.MachineInfo) v1.ResourceList {
 	c := v1.ResourceList{
 		v1.ResourceCPU: *resource.NewMilliQuantity(
@@ -57,6 +58,7 @@ func CapacityFromMachineInfo(info *cadvisorapi.MachineInfo) v1.ResourceList {
 }
 
 // EphemeralStorageCapacityFromFsInfo returns the capacity of the ephemeral storage from the FsInfo.
+// 硬盘容量/外存容量
 func EphemeralStorageCapacityFromFsInfo(info cadvisorapi2.FsInfo) v1.ResourceList {
 	c := v1.ResourceList{
 		v1.ResourceEphemeralStorage: *resource.NewQuantity(
@@ -73,6 +75,7 @@ func EphemeralStorageCapacityFromFsInfo(info cadvisorapi2.FsInfo) v1.ResourceLis
 // TODO: cri-o relies on cadvisor as a temporary workaround. The code should
 // be removed. Related issue:
 // https://github.com/kubernetes/kubernetes/issues/51798
+// 返回True代表使用cadvisor来返回metric而不是使用CRI
 func UsingLegacyCadvisorStats(runtime, runtimeEndpoint string) bool {
 	return (runtime == kubetypes.DockerContainerRuntime && goruntime.GOOS == "linux") ||
 		runtimeEndpoint == CrioSocket || runtimeEndpoint == "unix://"+CrioSocket

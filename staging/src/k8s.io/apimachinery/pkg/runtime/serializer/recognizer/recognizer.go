@@ -22,7 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
-
+// RecognizingDecoder 判断peek里面的数据能否被该decoder解析
 type RecognizingDecoder interface {
 	runtime.Decoder
 	// RecognizesData should return true if the input provided in the provided reader
@@ -42,6 +42,7 @@ type RecognizingDecoder interface {
 // 2. All other decoders, and any decoder that returned true for unknown.
 //
 // The order passed to the constructor is preserved within those priorities.
+// 就是一个组合decoder
 func NewDecoder(decoders ...runtime.Decoder) runtime.Decoder {
 	return &decoder{
 		decoders: decoders,

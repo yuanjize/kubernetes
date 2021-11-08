@@ -41,6 +41,7 @@ type clientNegotiator struct {
 	encode, decode GroupVersioner
 }
 
+// Encoder 根据contentType找到对应的SerializerInfo，最后根据NegotiatedSerializer接口找到合适的Encoder
 func (n *clientNegotiator) Encoder(contentType string, params map[string]string) (Encoder, error) {
 	// TODO: `pretty=1` is handled in NegotiateOutputMediaType, consider moving it to this method
 	// if client negotiators truly need to use it
@@ -55,6 +56,7 @@ func (n *clientNegotiator) Encoder(contentType string, params map[string]string)
 	return n.serializer.EncoderForVersion(info.Serializer, n.encode), nil
 }
 
+// Decoder 根据contentType找到对应的SerializerInfo，最后根据NegotiatedSerializer接口找到合适的Decoder
 func (n *clientNegotiator) Decoder(contentType string, params map[string]string) (Decoder, error) {
 	mediaTypes := n.serializer.SupportedMediaTypes()
 	info, ok := SerializerInfoForMediaType(mediaTypes, contentType)
@@ -66,7 +68,7 @@ func (n *clientNegotiator) Decoder(contentType string, params map[string]string)
 	}
 	return n.serializer.DecoderToVersion(info.Serializer, n.decode), nil
 }
-
+// StreamDecoder 根据contentType找到对应的SerializerInfo，最后根据NegotiatedSerializer接口找到合适的Decoder，Serializer，Framer
 func (n *clientNegotiator) StreamDecoder(contentType string, params map[string]string) (Decoder, Serializer, Framer, error) {
 	mediaTypes := n.serializer.SupportedMediaTypes()
 	info, ok := SerializerInfoForMediaType(mediaTypes, contentType)
@@ -85,6 +87,7 @@ func (n *clientNegotiator) StreamDecoder(contentType string, params map[string]s
 // NewClientNegotiator will attempt to retrieve the appropriate encoder, decoder, or
 // stream decoder for a given content type. Does not perform any conversion, but will
 // encode the object to the desired group, version, and kind. Use when creating a client.
+// 根据contentType找到合适的encoder, decoder, stream decoder
 func NewClientNegotiator(serializer NegotiatedSerializer, gv schema.GroupVersion) ClientNegotiator {
 	return &clientNegotiator{
 		serializer: serializer,

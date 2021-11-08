@@ -25,6 +25,7 @@ import (
 
 // MetaFactory is used to store and retrieve the version and kind
 // information for JSON objects in a serializer.
+// 从序列化数据中Parse出来GroupVersionKind
 type MetaFactory interface {
 	// Interpret should return the version and kind of the wire-format of
 	// the object.
@@ -34,6 +35,7 @@ type MetaFactory interface {
 // DefaultMetaFactory is a default factory for versioning objects in JSON. The object
 // in memory and in the default JSON serialization will use the "kind" and "apiVersion"
 // fields.
+// json的MetaFactory实现
 var DefaultMetaFactory = SimpleMetaFactory{}
 
 // SimpleMetaFactory provides default methods for retrieving the type and version of objects

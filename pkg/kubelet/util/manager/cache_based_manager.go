@@ -127,6 +127,7 @@ func (s *objectStore) DeleteReference(namespace, name string) {
 
 // GetObjectTTLFromNodeFunc returns a function that returns TTL value
 // from a given Node object.
+// 通过node的node.alpha.kubernetes.io/ttl注解来告诉kubelete能缓存一个object多长时间
 func GetObjectTTLFromNodeFunc(getNode func() (*v1.Node, error)) GetObjectTTLFunc {
 	return func() (time.Duration, bool) {
 		node, err := getNode()
@@ -144,6 +145,7 @@ func GetObjectTTLFromNodeFunc(getNode func() (*v1.Node, error)) GetObjectTTLFunc
 	}
 }
 
+// 当前对象是否还活着（就是没有过期）
 func (s *objectStore) isObjectFresh(data *objectData) bool {
 	objectTTL := s.defaultTTL
 	if ttl, ok := s.getTTL(); ok {
@@ -152,6 +154,7 @@ func (s *objectStore) isObjectFresh(data *objectData) bool {
 	return s.clock.Now().Before(data.lastUpdateTime.Add(objectTTL))
 }
 
+// 如果没有被AddReference过，那么返回err。
 func (s *objectStore) Get(namespace, name string) (runtime.Object, error) {
 	key := objectKey{namespace: namespace, name: name}
 
@@ -177,7 +180,7 @@ func (s *objectStore) Get(namespace, name string) (runtime.Object, error) {
 	defer data.Unlock()
 	if data.err != nil || !s.isObjectFresh(data) {
 		opts := metav1.GetOptions{}
-		if data.object != nil && data.err == nil {
+		if data.object != nil && data.err == nil {// 只是数据过期
 			// This is just a periodic refresh of an object we successfully fetched previously.
 			// In this case, server data from apiserver cache to reduce the load on both
 			// etcd and apiserver (the cache is eventually consistent).
@@ -190,6 +193,7 @@ func (s *objectStore) Get(namespace, name string) (runtime.Object, error) {
 			// Return the fetch result instead.
 			return object, err
 		}
+		// fetch成功或者 没有找到
 		if (err == nil && !isObjectOlder(object, data.object)) || apierrors.IsNotFound(err) {
 			// If the fetch succeeded with a newer version of the object, or if the
 			// object could not be found in the apiserver, update the cached data to

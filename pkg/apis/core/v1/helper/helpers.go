@@ -68,6 +68,7 @@ func IsHugePageResourceName(name v1.ResourceName) bool {
 // HugePageResourceName returns a ResourceName with the canonical hugepage
 // prefix prepended for the specified page size.  The page size is converted
 // to its canonical representation.
+// 获取HugePage资源名称，hugepages-容量
 func HugePageResourceName(pageSize resource.Quantity) v1.ResourceName {
 	return v1.ResourceName(fmt.Sprintf("%s%s", v1.ResourceHugePagesPrefix, pageSize.String()))
 }

@@ -153,21 +153,26 @@ type StreamSerializerInfo struct {
 // NegotiatedSerializer is an interface used for obtaining encoders, decoders, and serializers
 // for multiple supported media types. This would commonly be accepted by a server component
 // that performs HTTP content negotiation to accept multiple formats.
+// 主要是定制一些encoder和decoder，能按照要求的版本对object进行序列化和反序列化
 type NegotiatedSerializer interface {
 	// SupportedMediaTypes is the media types supported for reading and writing single objects.
+	// 支持的读写object的SerializerInfo
 	SupportedMediaTypes() []SerializerInfo
 
 	// EncoderForVersion returns an encoder that ensures objects being written to the provided
 	// serializer are in the provided group version.
+	// 返回一个Encoder，保证能把Object按照GroupVersioner版本encode
 	EncoderForVersion(serializer Encoder, gv GroupVersioner) Encoder
 	// DecoderForVersion returns a decoder that ensures objects being read by the provided
 	// serializer are in the provided group version by default.
+	// 返回一个Decoder，保证能把Object按照GroupVersioner版本decode出来
 	DecoderToVersion(serializer Decoder, gv GroupVersioner) Decoder
 }
 
 // ClientNegotiator handles turning an HTTP content type into the appropriate encoder.
 // Use NewClientNegotiator or NewVersionedClientNegotiator to create this interface from
 // a NegotiatedSerializer.
+// 根据mimetype返回适合encoder，decoder，framer，Serializer
 type ClientNegotiator interface {
 	// Encoder returns the appropriate encoder for the provided contentType (e.g. application/json)
 	// and any optional mediaType parameters (e.g. pretty=1), or an error. If no serializer is found
@@ -190,6 +195,7 @@ type ClientNegotiator interface {
 // StorageSerializer is an interface used for obtaining encoders, decoders, and serializers
 // that can read and write data at rest. This would commonly be used by client tools that must
 // read files, or server side storage interfaces that persist restful objects.
+// 读写restful object
 type StorageSerializer interface {
 	// SupportedMediaTypes are the media types supported for reading and writing objects.
 	SupportedMediaTypes() []SerializerInfo
@@ -220,19 +226,20 @@ type NestedObjectDecoder interface {
 
 ///////////////////////////////////////////////////////////////////////////////
 // Non-codec interfaces
-
+// ObjectDefaulter 给Object设置default value
 type ObjectDefaulter interface {
 	// Default takes an object (must be a pointer) and applies any default values.
 	// Defaulters may not error.
 	Default(in Object)
 }
 
+// ObjectVersioner 当前版本对象转换成指定的版本
 type ObjectVersioner interface {
 	ConvertToVersion(in Object, gv GroupVersioner) (out Object, err error)
 }
 
 // ObjectConvertor converts an object to a different version.
-// 用来给对象转换版本
+// ObjectConvertor 用来给对象转换版本
 type ObjectConvertor interface {
 	// Convert attempts to convert one object into another, or returns an error. This
 	// method does not mutate the in object, but the in and out object might share data structures,
@@ -252,6 +259,7 @@ type ObjectConvertor interface {
 
 // ObjectTyper contains methods for extracting the APIVersion and Kind
 // of objects.
+// ObjectTyper 获取对象可能使用的所有版本
 type ObjectTyper interface {
 	// ObjectKinds returns the all possible group,version,kind of the provided object, true if
 	// the object is unversioned, or an error if the object is not recognized
@@ -264,12 +272,13 @@ type ObjectTyper interface {
 }
 
 // ObjectCreater contains methods for instantiating an object by kind and version.
+// 根据GroupVersionKind创建Object
 type ObjectCreater interface {
 	New(kind schema.GroupVersionKind) (out Object, err error)
 }
 
 // EquivalentResourceMapper provides information about resources that address the same underlying data as a specified resource
-// 看起来是找引用相同底层资源的Resource
+// EquivalentResourceMapper 找引用相同底层资源的Resource
 type EquivalentResourceMapper interface {
 	// EquivalentResourcesFor returns a list of resources that address the same underlying data as resource.
 	// If subresource is specified, only equivalent resources which also have the same subresource are included.
@@ -294,12 +303,14 @@ type EquivalentResourceRegistry interface {
 
 // ResourceVersioner provides methods for setting and retrieving
 // the resource version from an API object.
+// 从Object设置和检索Version
 type ResourceVersioner interface {
 	SetResourceVersion(obj Object, version string) error
 	ResourceVersion(obj Object) (string, error)
 }
 
 // SelfLinker provides methods for setting and retrieving the SelfLink field of an API object.
+// 从object设置和检索self link
 type SelfLinker interface {
 	SetSelfLink(obj Object, selfLink string) error
 	SelfLink(obj Object) (string, error)
@@ -321,6 +332,7 @@ type Object interface {
 
 // CacheableObject allows an object to cache its different serializations
 // to avoid performing the same serialization multiple times.
+// CacheableObject看起来是会缓存encode结果
 type CacheableObject interface {
 	// CacheEncode writes an object to a stream. The <encode> function will
 	// be used in case of cache miss. The <encode> function takes ownership

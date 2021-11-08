@@ -43,6 +43,7 @@ func NewDefaultingCodecForScheme(
 // NewCodec takes objects in their internal versions and converts them to external versions before
 // serializing them. It assumes the serializer provided to it only deals with external versions.
 // This class is also a serializer, but is generally used with a specific version.
+// 实现了serializer接口没有仔细看代码，看起来就是encode之前，先把object的内部版本对象转换成外部版本对象再进行序列化
 func NewCodec(
 	encoder runtime.Encoder,
 	decoder runtime.Decoder,

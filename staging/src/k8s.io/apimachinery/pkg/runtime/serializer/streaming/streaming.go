@@ -59,6 +59,7 @@ type decoder struct {
 // NewDecoder creates a streaming decoder that reads object chunks from r and decodes them with d.
 // The reader is expected to return ErrShortRead if the provided buffer is not large enough to read
 // an entire object.
+// 从流中decode数据到Object对象中
 func NewDecoder(r io.ReadCloser, d runtime.Decoder) Decoder {
 	return &decoder{
 		reader:   r,
@@ -110,7 +111,7 @@ func (d *decoder) Decode(defaults *schema.GroupVersionKind, into runtime.Object)
 func (d *decoder) Close() error {
 	return d.reader.Close()
 }
-
+// 把Object encode之后写入流中
 type encoder struct {
 	writer  io.Writer
 	encoder runtime.Encoder

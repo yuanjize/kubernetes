@@ -109,7 +109,7 @@ type Serializer struct {
 // Serializer implements Serializer
 var _ runtime.Serializer = &Serializer{}
 var _ recognizer.RecognizingDecoder = &Serializer{}
-
+// 从json中decode出Number
 type customNumberExtension struct {
 	jsoniter.DummyExtension
 }
@@ -156,6 +156,7 @@ func CaseSensitiveJSONIterator() jsoniter.API {
 		CaseSensitive:          true,
 	}.Froze()
 	// Force jsoniter to decode number to interface{} via int64/float64, if possible.
+	// json number decide到interface中
 	config.RegisterExtension(&customNumberExtension{})
 	return config
 }
@@ -183,6 +184,7 @@ func StrictCaseSensitiveJSONIterator() jsoniter.API {
 var caseSensitiveJSONIterator = CaseSensitiveJSONIterator()
 var strictCaseSensitiveJSONIterator = StrictCaseSensitiveJSONIterator()
 
+// gvkWithDefaults中空的字段使用defaultGVK中对应的字段来填写
 // gvkWithDefaults returns group kind and version defaulting from provided default
 func gvkWithDefaults(actual, defaultGVK schema.GroupVersionKind) schema.GroupVersionKind {
 	if len(actual.Kind) == 0 {
@@ -206,6 +208,7 @@ func gvkWithDefaults(actual, defaultGVK schema.GroupVersionKind) schema.GroupVer
 // If into is nil or data's gvk different from into's gvk, it will generate a new Object with ObjectCreater.New(gvk)
 // On success or most errors, the method will return the calculated schema kind.
 // The gvk calculate priority will be originalData > default gvk > into
+// Decode originalData到Object中
 func (s *Serializer) Decode(originalData []byte, gvk *schema.GroupVersionKind, into runtime.Object) (runtime.Object, *schema.GroupVersionKind, error) {
 	data := originalData
 	if s.options.Yaml {
@@ -294,6 +297,7 @@ func (s *Serializer) Decode(originalData []byte, gvk *schema.GroupVersionKind, i
 }
 
 // Encode serializes the provided object to the given writer.
+// encode Object 并写到Writer中
 func (s *Serializer) Encode(obj runtime.Object, w io.Writer) error {
 	if co, ok := obj.(runtime.CacheableObject); ok {
 		return co.CacheEncode(s.Identifier(), s.doEncode, w)
@@ -333,6 +337,7 @@ func (s *Serializer) Identifier() runtime.Identifier {
 }
 
 // RecognizesData implements the RecognizingDecoder interface.
+// 是否是json数据
 func (s *Serializer) RecognizesData(data []byte) (ok, unknown bool, err error) {
 	if s.options.Yaml {
 		// we could potentially look for '---'
@@ -344,6 +349,7 @@ func (s *Serializer) RecognizesData(data []byte) (ok, unknown bool, err error) {
 // Framer is the default JSON framing behavior, with newlines delimiting individual objects.
 var Framer = jsonFramer{}
 
+// 本身写就是按照Frame写的，读使用NewJSONFramedReader来读取每一帧
 type jsonFramer struct{}
 
 // NewFrameWriter implements stream framing for this serializer
@@ -360,7 +366,7 @@ func (jsonFramer) NewFrameReader(r io.ReadCloser) io.ReadCloser {
 
 // YAMLFramer is the default JSON framing behavior, with newlines delimiting individual objects.
 var YAMLFramer = yamlFramer{}
-
+// 写使用yamlFrameWriter实现，就是每一段yaml使用---分割，读使用NewJSONFramedReader来读取每一帧
 type yamlFramer struct{}
 
 // NewFrameWriter implements stream framing for this serializer
