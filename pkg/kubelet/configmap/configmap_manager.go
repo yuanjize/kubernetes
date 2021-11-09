@@ -35,6 +35,7 @@ import (
 )
 
 // Manager interface provides methods for Kubelet to manage ConfigMap.
+// 底层实现就是util/manager,管理着ConfigMap资源，当Pod来的时候对Pod引用的configmap资源进行计数
 type Manager interface {
 	// Get configmap by configmap namespace and name.
 	GetConfigMap(namespace, name string) (*v1.ConfigMap, error)
@@ -52,6 +53,7 @@ type Manager interface {
 
 // simpleConfigMapManager implements ConfigMap Manager interface with
 // simple operations to apiserver.
+// 只提供GetConfigMap函数，从apiserver读取configMap
 type simpleConfigMapManager struct {
 	kubeClient clientset.Interface
 }
@@ -75,6 +77,7 @@ func (s *simpleConfigMapManager) UnregisterPod(pod *v1.Pod) {
 // for registered pods. Different implementation of the store
 // may result in different semantics for freshness of configmaps
 // (e.g. ttl-based implementation vs watch-based implementation).
+// 用了util/manager实现了manager接口，util/manager就是使用本地cache来对对象进行操作
 type configMapManager struct {
 	manager manager.Manager
 }
@@ -98,6 +101,7 @@ func (c *configMapManager) UnregisterPod(pod *v1.Pod) {
 	c.manager.UnregisterPod(pod)
 }
 
+// 从Pod的定义中遍历所有的ConfigMapName并返回，就是这个Pod用的所有configMap的Name
 func getConfigMapNames(pod *v1.Pod) sets.String {
 	result := sets.NewString()
 	podutil.VisitPodConfigmapNames(pod, func(name string) bool {
@@ -119,6 +123,7 @@ const (
 // - every GetObject() call tries to fetch the value from local cache; if it is
 //   not there, invalidated or too old, we fetch it from apiserver and refresh the
 //   value in cache; otherwise it is just fetched from cache
+// manager中的资源是通过主动找apiserver要的
 func NewCachingConfigMapManager(kubeClient clientset.Interface, getTTL manager.GetObjectTTLFunc) Manager {
 	getConfigMap := func(namespace, name string, opts metav1.GetOptions) (runtime.Object, error) {
 		return kubeClient.CoreV1().ConfigMaps(namespace).Get(context.TODO(), name, opts)
@@ -135,6 +140,7 @@ func NewCachingConfigMapManager(kubeClient clientset.Interface, getTTL manager.G
 // - whenever a pod is created or updated, we start individual watches for all
 //   referenced objects that aren't referenced from other registered pods
 // - every GetObject() returns a value from local cache propagated via watches
+// manager中的资源是通过listAndWatch进行cache的
 func NewWatchingConfigMapManager(kubeClient clientset.Interface, resyncInterval time.Duration) Manager {
 	listConfigMap := func(namespace string, opts metav1.ListOptions) (runtime.Object, error) {
 		return kubeClient.CoreV1().ConfigMaps(namespace).List(context.TODO(), opts)

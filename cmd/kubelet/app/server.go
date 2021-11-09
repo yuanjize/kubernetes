@@ -988,6 +988,7 @@ func kubeClientConfigOverrides(s *options.KubeletServer, clientConfig *restclien
 
 // getNodeName returns the node name according to the cloud provider
 // if cloud provider is specified. Otherwise, returns the hostname of the node.
+// 暂时认为就是hostName
 func getNodeName(cloud cloudprovider.Interface, hostname string) (types.NodeName, error) {
 	if cloud == nil {
 		return types.NodeName(hostname), nil

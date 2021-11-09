@@ -40,11 +40,18 @@ import (
 type listObjectFunc func(string, metav1.ListOptions) (runtime.Object, error)
 type watchObjectFunc func(string, metav1.ListOptions) (watch.Interface, error)
 type newObjectFunc func() runtime.Object
-type isImmutableFunc func(runtime.Object) bool
+type isImmutableFunc func(runtime.Object) bool  // 判断资源是不是不可变的，不可变资源初始化一次之后就不需要reflactor再接着监听了
+
+/*
+   这个文件主要定义了一个Store的实现ObjectCache，和objectStore不一样的是，他是为每个资源创建一个reflector来更新本地cache的资源，但是cacheStore是通过主动去apiserver要资源来填充pod
+   cache.Store就是一个进行增删改查的Store
+   cache.Reflector会使用ListAndWatch来更新数据并缓存到cache.Store，更新会使用cache.Store的Replace函数
+*/
 
 // objectCacheItem is a single item stored in objectCache.
+// 维护一个cache，真正的cache是cacheStore字段，reflector会自动更新数据到cacheStore中
 type objectCacheItem struct {
-	refCount  int
+	refCount  int // 资源引用计数
 	store     *cacheStore
 	reflector *cache.Reflector
 
@@ -57,9 +64,9 @@ type objectCacheItem struct {
 	// and protecting from closing stopCh multiple times.
 	lock           sync.Mutex
 	lastAccessTime time.Time
-	stopped        bool
-	immutable      bool
-	stopCh         chan struct{}
+	stopped        bool   // reflactor是否是不可变的
+	immutable      bool  // 判断资源是不是不可变的，不可变资源初始化一次之后就不需要reflactor再接着监听了
+	stopCh         chan struct{} // 用来停止reflactor工作
 }
 
 func (i *objectCacheItem) stop() bool {
@@ -80,18 +87,21 @@ func (i *objectCacheItem) stopThreadUnsafe() bool {
 	return true
 }
 
+// 最新访问时间
 func (i *objectCacheItem) setLastAccessTime(time time.Time) {
 	i.lock.Lock()
 	defer i.lock.Unlock()
 	i.lastAccessTime = time
 }
 
+// 设置为不可变
 func (i *objectCacheItem) setImmutable() {
 	i.lock.Lock()
 	defer i.lock.Unlock()
 	i.immutable = true
 }
 
+// 如果闲置时间超过maxIdleTime了，停止reflactor
 func (i *objectCacheItem) stopIfIdle(now time.Time, maxIdleTime time.Duration) bool {
 	i.lock.Lock()
 	defer i.lock.Unlock()
@@ -101,6 +111,7 @@ func (i *objectCacheItem) stopIfIdle(now time.Time, maxIdleTime time.Duration) b
 	return false
 }
 
+// 重新启动Reflector
 func (i *objectCacheItem) restartReflectorIfNeeded() {
 	i.lock.Lock()
 	defer i.lock.Unlock()
@@ -112,6 +123,7 @@ func (i *objectCacheItem) restartReflectorIfNeeded() {
 	go i.startReflector()
 }
 
+// 启动Reflector
 func (i *objectCacheItem) startReflector() {
 	i.waitGroup.Wait()
 	i.waitGroup.Add(1)
@@ -120,12 +132,14 @@ func (i *objectCacheItem) startReflector() {
 }
 
 // cacheStore is in order to rewrite Replace function to mark initialized flag
+// cacheStore是cache.Store一个wrapper，有个标记用来标记是否被初始化过
 type cacheStore struct {
 	cache.Store
 	lock        sync.Mutex
-	initialized bool
+	initialized bool // 标志是否被reflactor初始化过
 }
 
+// 初始化会调用该函数
 func (c *cacheStore) Replace(list []interface{}, resourceVersion string) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -137,12 +151,14 @@ func (c *cacheStore) Replace(list []interface{}, resourceVersion string) error {
 	return nil
 }
 
+// 标志是否被reflactor初始化过数据
 func (c *cacheStore) hasSynced() bool {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	return c.initialized
 }
 
+// 设置为没有初始化过
 func (c *cacheStore) unsetInitialized() {
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -192,10 +208,12 @@ func NewObjectCache(
 	}
 
 	// TODO propagate stopCh from the higher level.
+	// 定期检查itemm的闲置时间，如果闲置时间超过maxIdleTime了，停止reflactor
 	go wait.Until(store.startRecycleIdleWatch, time.Minute, wait.NeverStop)
 	return store
 }
 
+// 创建cacheStore
 func (c *objectCache) newStore() *cacheStore {
 	// TODO: We may consider created a dedicated store keeping just a single
 	// item, instead of using a generic store implementation for this purpose.
@@ -206,6 +224,7 @@ func (c *objectCache) newStore() *cacheStore {
 	return &cacheStore{store, sync.Mutex{}, false}
 }
 
+// 创建并运行reflactor
 func (c *objectCache) newReflector(namespace, name string) *objectCacheItem {
 	fieldSelector := fields.Set{"metadata.name": name}.AsSelector().String()
 	listFunc := func(options metav1.ListOptions) (runtime.Object, error) {
@@ -235,6 +254,7 @@ func (c *objectCache) newReflector(namespace, name string) *objectCacheItem {
 	return item
 }
 
+// 增加引用计数，资源不存在就搞个reflactor去拉资源
 func (c *objectCache) AddReference(namespace, name string) {
 	key := objectKey{namespace: namespace, name: name}
 
@@ -253,6 +273,7 @@ func (c *objectCache) AddReference(namespace, name string) {
 	item.refCount++
 }
 
+// 减少引用计数，计数为0就停止对资源的舰艇
 func (c *objectCache) DeleteReference(namespace, name string) {
 	key := objectKey{namespace: namespace, name: name}
 
@@ -277,6 +298,7 @@ func (c *objectCache) key(namespace, name string) string {
 	return name
 }
 
+// 从cache中获取object
 func (c *objectCache) Get(namespace, name string) (runtime.Object, error) {
 	key := objectKey{namespace: namespace, name: name}
 
@@ -287,10 +309,13 @@ func (c *objectCache) Get(namespace, name string) (runtime.Object, error) {
 	if !exists {
 		return nil, fmt.Errorf("object %q/%q not registered", namespace, name)
 	}
+	// 启动reflactor
 	item.restartReflectorIfNeeded()
+	// 等待item.hasSynced返回true
 	if err := wait.PollImmediate(10*time.Millisecond, time.Second, item.hasSynced); err != nil {
 		return nil, fmt.Errorf("failed to sync %s cache: %v", c.groupResource.String(), err)
 	}
+	// 更新访问时间
 	item.setLastAccessTime(c.clock.Now())
 	obj, exists, err := item.store.GetByKey(c.key(namespace, name))
 	if err != nil {
@@ -310,6 +335,7 @@ func (c *objectCache) Get(namespace, name string) (runtime.Object, error) {
 		//   already have it from here
 		// - doing that would require significant refactoring to reflector
 		// we limit ourselves to just quickly stop the reflector here.
+		// 如果是不可变的对象，那么cache中有了之后就不需要refactor一直在watch
 		if c.isImmutable(object) {
 			item.setImmutable()
 			if item.stop() {
@@ -321,6 +347,7 @@ func (c *objectCache) Get(namespace, name string) (runtime.Object, error) {
 	return nil, fmt.Errorf("unexpected object type: %v", obj)
 }
 
+// 检查是否有过期的item，如果过期了就停止reflator
 func (c *objectCache) startRecycleIdleWatch() {
 	c.lock.Lock()
 	defer c.lock.Unlock()

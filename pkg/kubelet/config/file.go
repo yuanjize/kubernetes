@@ -49,14 +49,18 @@ type watchEvent struct {
 	eventType podEventType
 }
 
+/*
+  就是从文件获取到Pod，存储在cache中。（监听文件）Pod（store）有变化的时候通知updates
+*/
+
 type sourceFile struct {
-	path           string
-	nodeName       types.NodeName
-	period         time.Duration
-	store          cache.Store
-	fileKeyMapping map[string]string
-	updates        chan<- interface{}
-	watchEvents    chan *watchEvent
+	path           string          // 静态文件路径
+	nodeName       types.NodeName  // hostName
+	period         time.Duration   // 间隔period时间，从文件中重新解析pod并更新store
+	store          cache.Store    // 一个内存cache，有更新之后会把当前cache的所有值用set的方式发送到updates中
+	fileKeyMapping map[string]string  // key是文件路径 value是从文件中解析出来的pod的namespace/name
+	updates        chan<- interface{} // 用来接受更新
+	watchEvents    chan *watchEvent    // 文件变化的时候，watcher会把事件写到这里面
 }
 
 // NewSourceFile watches a config file for changes.
@@ -77,6 +81,7 @@ func newSourceFile(path string, nodeName types.NodeName, period time.Duration, u
 		}
 		updates <- kubetypes.PodUpdate{Pods: pods, Op: kubetypes.SET, Source: kubetypes.FileSource}
 	}
+	// 每次store有变化之后会把所有的当前缓存调用send函数，也就是写到updates中
 	store := cache.NewUndeltaStore(send, cache.MetaNamespaceKeyFunc)
 	return &sourceFile{
 		path:           path,
@@ -89,6 +94,8 @@ func newSourceFile(path string, nodeName types.NodeName, period time.Duration, u
 	}
 }
 
+
+// 1.定时读取所有config 重写store 2.监听文件变化，增量变更store
 func (s *sourceFile) run() {
 	listTicker := time.NewTicker(s.period)
 
@@ -114,10 +121,12 @@ func (s *sourceFile) run() {
 	s.startWatch()
 }
 
+// 设置一些默认值
 func (s *sourceFile) applyDefaults(pod *api.Pod, source string) error {
 	return applyDefaults(pod, source, true, s.nodeName)
 }
 
+// 从文件中解析出来pods并更新store
 func (s *sourceFile) listConfig() error {
 	path := s.path
 	statInfo, err := os.Stat(path)
@@ -158,6 +167,7 @@ func (s *sourceFile) listConfig() error {
 // Get as many pod manifests as we can from a directory. Return an error if and only if something
 // prevented us from reading anything at all. Do not return an error if only some files
 // were problematic.
+// 从文件夹中的读出来所有文件定义的pod
 func (s *sourceFile) extractFromDir(name string) ([]*v1.Pod, error) {
 	dirents, err := filepath.Glob(filepath.Join(name, "[^.]*"))
 	if err != nil {
@@ -197,11 +207,12 @@ func (s *sourceFile) extractFromDir(name string) ([]*v1.Pod, error) {
 }
 
 // extractFromFile parses a file for Pod configuration information.
+// 从文件中decode出来pod定义
 func (s *sourceFile) extractFromFile(filename string) (pod *v1.Pod, err error) {
 	klog.V(3).InfoS("Reading config file", "path", filename)
 	defer func() {
 		if err == nil && pod != nil {
-			objKey, keyErr := cache.MetaNamespaceKeyFunc(pod)
+			objKey, keyErr := cache.MetaNamespaceKeyFunc(pod) // objKey是namespace/name
 			if keyErr != nil {
 				err = keyErr
 				return
@@ -221,10 +232,12 @@ func (s *sourceFile) extractFromFile(filename string) (pod *v1.Pod, err error) {
 		return pod, err
 	}
 
+	// 用来设置一些默认值
 	defaultFn := func(pod *api.Pod) error {
 		return s.applyDefaults(pod, filename)
 	}
 
+	// 反序列化并设置一些默认值
 	parsed, pod, podErr := tryDecodeSinglePod(data, defaultFn)
 	if parsed {
 		if podErr != nil {
@@ -236,6 +249,7 @@ func (s *sourceFile) extractFromFile(filename string) (pod *v1.Pod, err error) {
 	return pod, fmt.Errorf("%v: couldn't parse as pod(%v), please check config file", filename, podErr)
 }
 
+// 用新数据刷新cache
 func (s *sourceFile) replaceStore(pods ...*v1.Pod) (err error) {
 	objs := []interface{}{}
 	for _, pod := range pods {

@@ -34,9 +34,11 @@ import (
 )
 
 // GetObjectTTLFunc defines a function to get value of TTL.
+// 获取ccache过期时间的函数
 type GetObjectTTLFunc func() (time.Duration, bool)
 
 // GetObjectFunc defines a function to get object with a given namespace and name.
+// 从外部(apis erver)获取 object的函数
 type GetObjectFunc func(string, string, metav1.GetOptions) (runtime.Object, error)
 
 type objectKey struct {
@@ -45,29 +47,32 @@ type objectKey struct {
 }
 
 // objectStoreItems is a single item stored in objectStore.
+// 缓存的对象的wrapper
 type objectStoreItem struct {
-	refCount int
+	refCount int  // 引用的次数
 	data     *objectData
 }
 
 type objectData struct {
 	sync.Mutex
 
-	object         runtime.Object
-	err            error
-	lastUpdateTime time.Time
+	object         runtime.Object  // 缓存的资源
+	err            error      // fetch时候发生的err
+	lastUpdateTime time.Time // 该资源缓存更新时间
 }
 
 // objectStore is a local cache of objects.
+// 实现了manager.Store接口，可以对资源增加和减少引用计数
+// 一个Object的本地cache，数据取不到时候会去apiserver获取然后存储在本地，object有过期功能，过期之后重新从apiserver取然后cache到本地
 type objectStore struct {
-	getObject GetObjectFunc
-	clock     clock.Clock
+	getObject GetObjectFunc // 用来从apiserver获取object然后缓存到本地
+	clock     clock.Clock   // 可以认为是time.Time
 
 	lock  sync.Mutex
-	items map[objectKey]*objectStoreItem
+	items map[objectKey]*objectStoreItem  // cache
 
-	defaultTTL time.Duration
-	getTTL     GetObjectTTLFunc
+	defaultTTL time.Duration     // 默认缓存过期时间
+	getTTL     GetObjectTTLFunc  // 动态获取缓存过期时间
 }
 
 // NewObjectStore returns a new ttl-based instance of Store interface.
@@ -81,6 +86,7 @@ func NewObjectStore(getObject GetObjectFunc, clock clock.Clock, getTTL GetObject
 	}
 }
 
+// newObject版本是否比oldObject版本老
 func isObjectOlder(newObject, oldObject runtime.Object) bool {
 	if newObject == nil || oldObject == nil {
 		return false
@@ -90,6 +96,7 @@ func isObjectOlder(newObject, oldObject runtime.Object) bool {
 	return newVersion < oldVersion
 }
 
+// AddReference 添加引用：refCount+1，然后添加更新缓存
 func (s *objectStore) AddReference(namespace, name string) {
 	key := objectKey{namespace: namespace, name: name}
 
@@ -112,6 +119,7 @@ func (s *objectStore) AddReference(namespace, name string) {
 	item.data = nil
 }
 
+// DeleteReference 删除引用：refCount-1，如果refCount变为0那么删除cache
 func (s *objectStore) DeleteReference(namespace, name string) {
 	key := objectKey{namespace: namespace, name: name}
 
@@ -154,7 +162,7 @@ func (s *objectStore) isObjectFresh(data *objectData) bool {
 	return s.clock.Now().Before(data.lastUpdateTime.Add(objectTTL))
 }
 
-// 如果没有被AddReference过，那么返回err。
+// Get 如果没有被AddReference过，那么返回err。如果数据不存在或者过期，那么从apiserver中去获取
 func (s *objectStore) Get(namespace, name string) (runtime.Object, error) {
 	key := objectKey{namespace: namespace, name: name}
 
@@ -178,9 +186,10 @@ func (s *objectStore) Get(namespace, name string) (runtime.Object, error) {
 	// needed and return data.
 	data.Lock()
 	defer data.Unlock()
+	// 如果对象不正常或者过期，那就从apiserver获取对象
 	if data.err != nil || !s.isObjectFresh(data) {
 		opts := metav1.GetOptions{}
-		if data.object != nil && data.err == nil {// 只是数据过期
+		if data.object != nil && data.err == nil {// 数据过期，重新从apiserver(的cache)拿数据
 			// This is just a periodic refresh of an object we successfully fetched previously.
 			// In this case, server data from apiserver cache to reduce the load on both
 			// etcd and apiserver (the cache is eventually consistent).
@@ -188,12 +197,13 @@ func (s *objectStore) Get(namespace, name string) (runtime.Object, error) {
 		}
 
 		object, err := s.getObject(namespace, name, opts)
+		// 没有从api server获取到，并且没有缓存，那么只能把apiserver获取结果
 		if err != nil && !apierrors.IsNotFound(err) && data.object == nil && data.err == nil {
 			// Couldn't fetch the latest object, but there is no cached data to return.
 			// Return the fetch result instead.
 			return object, err
 		}
-		// fetch成功或者 没有找到
+		// fetch到了一个更新版本的object，或者 apiserver没有找到，那么就更新缓存
 		if (err == nil && !isObjectOlder(object, data.object)) || apierrors.IsNotFound(err) {
 			// If the fetch succeeded with a newer version of the object, or if the
 			// object could not be found in the apiserver, update the cached data to
@@ -210,18 +220,20 @@ func (s *objectStore) Get(namespace, name string) (runtime.Object, error) {
 // for registered pods. Different implementations of the store
 // may result in different semantics for freshness of objects
 // (e.g. ttl-based implementation vs watch-based implementation).
+// 一个manager实现，RegisterPod就是对该pod所有的资源的引用计数+1，UnregisterPod就是对pod引用的所有资源计数-1
 type cacheBasedManager struct {
-	objectStore          Store
-	getReferencedObjects func(*v1.Pod) sets.String
+	objectStore          Store  // 用来获取资源，增加/减少资源引用
+	getReferencedObjects func(*v1.Pod) sets.String // 获取Pod引用的资源
 
 	lock           sync.Mutex
-	registeredPods map[objectKey]*v1.Pod
+	registeredPods map[objectKey]*v1.Pod // 已经注册过了的Pod
 }
 
 func (c *cacheBasedManager) GetObject(namespace, name string) (runtime.Object, error) {
 	return c.objectStore.Get(namespace, name)
 }
 
+// RegisterPod 把pod引用的资源都+1，然后把同key的老pod引用的资源引用数的-1
 func (c *cacheBasedManager) RegisterPod(pod *v1.Pod) {
 	names := c.getReferencedObjects(pod)
 	c.lock.Lock()
@@ -245,6 +257,7 @@ func (c *cacheBasedManager) RegisterPod(pod *v1.Pod) {
 	}
 }
 
+// UnregisterPod 对Pod引用的资源的计数-1，从registeredPods中删除pod
 func (c *cacheBasedManager) UnregisterPod(pod *v1.Pod) {
 	var prev *v1.Pod
 	key := objectKey{namespace: pod.Namespace, name: pod.Name}

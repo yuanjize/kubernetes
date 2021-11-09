@@ -28,8 +28,8 @@ import (
 // imageFsInfoProvider knows how to translate the configured runtime
 // to its file system label for images.
 type imageFsInfoProvider struct {
-	runtime         string
-	runtimeEndpoint string
+	runtime         string // runtimme是docker还是cri
+	runtimeEndpoint string // 和守护进程通信的unix domain socker
 }
 
 // ImageFsInfoLabel returns the image fs label for the configured runtime.

@@ -65,6 +65,7 @@ func (s *sourceFile) startWatch() {
 	}, retryPeriod)
 }
 
+// 通过 fsnotify不断监听文件变化事件并转换为watchEvent来给由consumeWatchEvent修改store
 func (s *sourceFile) doWatch() error {
 	_, err := os.Stat(s.path)
 	if err != nil {
@@ -99,6 +100,7 @@ func (s *sourceFile) doWatch() error {
 	}
 }
 
+// 根据文件的事件，生成watchEvent写到watchEvents chan
 func (s *sourceFile) produceWatchEvent(e *fsnotify.Event) error {
 	// Ignore file start with dots
 	if strings.HasPrefix(filepath.Base(e.Name), ".") {
@@ -126,6 +128,7 @@ func (s *sourceFile) produceWatchEvent(e *fsnotify.Event) error {
 	return nil
 }
 
+// 根据事件修改strore
 func (s *sourceFile) consumeWatchEvent(e *watchEvent) error {
 	switch e.eventType {
 	case podAdd, podModify:

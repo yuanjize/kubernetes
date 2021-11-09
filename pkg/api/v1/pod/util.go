@@ -213,11 +213,13 @@ func visitContainerSecretNames(container *v1.Container, visitor Visitor) bool {
 }
 
 // VisitPodConfigmapNames invokes the visitor function with the name of every configmap
-// referenced by the pod spec. If visitor returns false, visiting is short-circuited.
+// referenced by the pod spec. If visitor returns false, visiting is short-circuited.x
 // Transitive references (e.g. pod -> pvc -> pv -> secret) are not visited.
 // Returns true if visiting completed, false if visiting was short-circuited.
+// 从Pod的定义中使用Visitor遍历所有的ConfigMapName
 func VisitPodConfigmapNames(pod *v1.Pod, visitor Visitor) bool {
 	visitor = skipEmptyNames(visitor)
+	// 从容器的环境变量里面遍历CconfigMap
 	VisitContainers(&pod.Spec, AllContainers, func(c *v1.Container, containerType ContainerType) bool {
 		return visitContainerConfigmapNames(c, visitor)
 	})
@@ -242,6 +244,7 @@ func VisitPodConfigmapNames(pod *v1.Pod, visitor Visitor) bool {
 	return true
 }
 
+// 从容器环境变量里面遍历ConfigMapRef.Name给Visitor
 func visitContainerConfigmapNames(container *v1.Container, visitor Visitor) bool {
 	for _, env := range container.EnvFrom {
 		if env.ConfigMapRef != nil {

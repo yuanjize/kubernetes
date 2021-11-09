@@ -24,6 +24,12 @@ import (
 // Manager is the interface for registering and unregistering
 // objects referenced by pods in the underlying cache and
 // extracting those from that cache if needed.
+/*
+ 用来registering和unregistering被Pod使用的资源
+   1.GetObject 获取Object
+   2.RegisterPod 注册Pod引用的所有资源
+   3.UnregisterPod Pod不再使用引用的所有资源。这两个函数一般都用引用计数法来标志资源的引用
+*/
 type Manager interface {
 	// Get object by its namespace and name.
 	GetObject(namespace, name string) (runtime.Object, error)
@@ -45,6 +51,12 @@ type Manager interface {
 
 // Store is the interface for a object cache that
 // can be used by cacheBasedManager.
+/*
+  Object的内存缓存
+   1.AddReference添加对资源的引用
+   2.DeleteReference减少对资源的引用
+   3.GetObject获取object
+*/
 type Store interface {
 	// AddReference adds a reference to the object to the store.
 	// Note that multiple additions to the store has to be allowed

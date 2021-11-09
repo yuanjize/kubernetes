@@ -24,6 +24,7 @@ import (
 
 // FromApiserverCache modifies <opts> so that the GET request will
 // be served from apiserver cache instead of from etcd.
+// ResourceVersion代表返回任意版本的资源，有可能比client现在获取到的版本还低，数据来自apiserver的cache
 func FromApiserverCache(opts *metav1.GetOptions) {
 	opts.ResourceVersion = "0"
 }

@@ -41,6 +41,7 @@ type sourceURL struct {
 	failureLogs int
 	client      *http.Client
 }
+//和file差不多，定时请求endpoint然后进行更新
 
 // NewSourceURL specifies the URL where to read the Pod configuration from, then watches it for changes.
 func NewSourceURL(url string, header http.Header, nodeName types.NodeName, period time.Duration, updates chan<- interface{}) {

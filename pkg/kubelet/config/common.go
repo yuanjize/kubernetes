@@ -45,14 +45,16 @@ import (
 )
 
 const (
-	maxConfigLength = 10 * 1 << 20 // 10MB
+	maxConfigLength = 10 * 1 << 20 // 10MB  一个config的最大长度
 )
 
 // Generate a pod name that is unique among nodes by appending the nodeName.
+// 生成podName，name-nodeName
 func generatePodName(name string, nodeName types.NodeName) string {
 	return fmt.Sprintf("%s-%s", name, strings.ToLower(string(nodeName)))
 }
 
+// 设置一些默认值
 func applyDefaults(pod *api.Pod, source string, isFile bool, nodeName types.NodeName) error {
 	if len(pod.UID) == 0 {
 		hasher := md5.New()
@@ -114,6 +116,7 @@ func getSelfLink(name, namespace string) string {
 type defaultFunc func(pod *api.Pod) error
 
 // tryDecodeSinglePod takes data and tries to extract valid Pod config information from it.
+// Pod反序列化，defaultFunc用来设置一些默认值
 func tryDecodeSinglePod(data []byte, defaultFn defaultFunc) (parsed bool, pod *v1.Pod, err error) {
 	// JSON is valid YAML, so this should work for everything.
 	json, err := utilyaml.ToJSON(data)
@@ -146,6 +149,7 @@ func tryDecodeSinglePod(data []byte, defaultFn defaultFunc) (parsed bool, pod *v
 	return true, v1Pod, nil
 }
 
+// decode出来PodList
 func tryDecodePodList(data []byte, defaultFn defaultFunc) (parsed bool, pods v1.PodList, err error) {
 	obj, err := runtime.Decode(legacyscheme.Codecs.UniversalDecoder(), data)
 	if err != nil {

@@ -23,6 +23,7 @@ import (
 )
 
 // Interface is an abstract interface for testability.  It abstracts the interface to cAdvisor.
+// 就是cAdvisor所有的函数
 type Interface interface {
 	Start() error
 	DockerContainer(name string, req *cadvisorapi.ContainerInfoRequest) (cadvisorapi.ContainerInfo, error)
@@ -48,6 +49,7 @@ type Interface interface {
 }
 
 // ImageFsInfoProvider informs cAdvisor how to find imagefs for container images.
+// 告诉cAdvisor 容器景象的fs
 type ImageFsInfoProvider interface {
 	// ImageFsInfoLabel returns the label cAdvisor should use to find the filesystem holding container images.
 	ImageFsInfoLabel() (string, error)

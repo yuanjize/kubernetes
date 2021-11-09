@@ -32,8 +32,8 @@ import (
 
 // WaitForAPIServerSyncPeriod is the period between checks for the node list/watch initial sync
 const WaitForAPIServerSyncPeriod = 1 * time.Second
-
 // NewSourceApiserver creates a config source that watches and pulls from the apiserver.
+// 看起来先等到informer同步完了才会开始使用Reflector同步Pod
 func NewSourceApiserver(c clientset.Interface, nodeName types.NodeName, nodeHasSynced func() bool, updates chan<- interface{}) {
 	lw := cache.NewListWatchFromClient(c.CoreV1().RESTClient(), "pods", metav1.NamespaceAll, fields.OneTermEqualSelector("spec.nodeName", string(nodeName)))
 
@@ -55,6 +55,7 @@ func NewSourceApiserver(c clientset.Interface, nodeName types.NodeName, nodeHasS
 }
 
 // newSourceApiserverFromLW holds creates a config source that watches and pulls from the apiserver.
+// watch apiserver的Pod
 func newSourceApiserverFromLW(lw cache.ListerWatcher, updates chan<- interface{}) {
 	send := func(objs []interface{}) {
 		var pods []*v1.Pod
