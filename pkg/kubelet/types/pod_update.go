@@ -26,6 +26,7 @@ import (
 
 // Annotation keys for annotations used in this package.
 const (
+	//ConfigSourceAnnotationKey 这个pod配置的来源，是http,apiserver,file三种
 	ConfigSourceAnnotationKey    = "kubernetes.io/config.source"
 	ConfigMirrorAnnotationKey    = v1.MirrorPodAnnotationKey
 	ConfigFirstSeenAnnotationKey = "kubernetes.io/config.seen"

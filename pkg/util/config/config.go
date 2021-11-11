@@ -21,7 +21,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/wait"
 )
-
+// 把更新的数据merge到数据源中
 type Merger interface {
 	// Invoked when a change from a source is received.  May also function as an incremental
 	// merger if you wish to consume changes incrementally.  Must be reentrant when more than
@@ -38,6 +38,7 @@ func (f MergeFunc) Merge(source string, update interface{}) error {
 
 // Mux is a class for merging configuration from multiple sources.  Changes are
 // pushed via channels and sent to the merge function.
+// 每个数据源对应一个channel，当对应的数据源有更新的时候会写数据源对应的channel，mux收到数据之后调用Merger来合并数据
 type Mux struct {
 	// Invoked when an update is sent to a source.
 	merger Merger
@@ -62,6 +63,7 @@ func NewMux(merger Merger) *Mux {
 // source will return the same channel. This allows change and state based sources
 // to use the same channel. Different source names however will be treated as a
 // union.
+// 返回一个source对应channel，外面有更新的时候会写这个channel，然后mux会调用merge
 func (m *Mux) Channel(source string) chan interface{} {
 	if len(source) == 0 {
 		panic("Channel given an empty name")

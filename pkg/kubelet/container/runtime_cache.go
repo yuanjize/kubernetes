@@ -25,7 +25,7 @@ var (
 	// TODO(yifan): Maybe set the them as parameters for NewCache().
 	defaultCachePeriod = time.Second * 2
 )
-
+// 定义一个获取缓存的pods的接口
 // RuntimeCache is in interface for obtaining cached Pods.
 type RuntimeCache interface {
 	GetPods() ([]*Pod, error)
@@ -52,13 +52,14 @@ type runtimeCache struct {
 	// The underlying container runtime used to update the cache.
 	getter podsGetter
 	// Last time when cache was updated.
-	cacheTime time.Time
+	cacheTime time.Time // 从podsGetter获取pods的时间
 	// The content of the cache.
-	pods []*Pod
+	pods []*Pod  // 从podsGetter获取的pods缓存
 }
 
 // GetPods returns the cached pods if they are not outdated; otherwise, it
 // retrieves the latest pods and return them.
+// pods没有过期就直接返回，过期了就从podsGetter开始全量同步
 func (r *runtimeCache) GetPods() ([]*Pod, error) {
 	r.Lock()
 	defer r.Unlock()
@@ -70,6 +71,7 @@ func (r *runtimeCache) GetPods() ([]*Pod, error) {
 	return r.pods, nil
 }
 
+// ForceUpdateIfOlder 上次同步时时间小于minExpectedCacheTime，那么重新同步
 func (r *runtimeCache) ForceUpdateIfOlder(minExpectedCacheTime time.Time) error {
 	r.Lock()
 	defer r.Unlock()
@@ -79,6 +81,7 @@ func (r *runtimeCache) ForceUpdateIfOlder(minExpectedCacheTime time.Time) error 
 	return nil
 }
 
+// 重新全量同步pods
 func (r *runtimeCache) updateCache() error {
 	pods, timestamp, err := r.getPodsWithTimestamp()
 	if err != nil {

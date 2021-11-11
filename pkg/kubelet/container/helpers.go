@@ -38,12 +38,14 @@ import (
 )
 
 // HandlerRunner runs a lifecycle handler for a container.
+// 运行容器生命周期的handler
 type HandlerRunner interface {
 	Run(containerID ContainerID, pod *v1.Pod, container *v1.Container, handler *v1.Handler) (string, error)
 }
 
 // RuntimeHelper wraps kubelet to make container runtime
 // able to get necessary informations like the RunContainerOptions, DNS settings, Host IP.
+// 获取一些网络相关的必要信息，是kubelet的一个wrapper
 type RuntimeHelper interface {
 	GenerateRunContainerOptions(pod *v1.Pod, container *v1.Container, podIP string, podIPs []string) (contOpts *RunContainerOptions, cleanupAction func(), err error)
 	GetPodDNS(pod *v1.Pod) (dnsConfig *runtimeapi.DNSConfig, err error)
@@ -60,12 +62,13 @@ type RuntimeHelper interface {
 
 // ShouldContainerBeRestarted checks whether a container needs to be restarted.
 // TODO(yifan): Think about how to refactor this.
+// 检查容器是否需要重启
 func ShouldContainerBeRestarted(container *v1.Container, pod *v1.Pod, podStatus *PodStatus) bool {
 	// Once a pod has been marked deleted, it should not be restarted
 	if pod.DeletionTimestamp != nil {
 		return false
 	}
-	// Get latest container status.
+	// Get latest container status. 获取容器状态
 	status := podStatus.FindContainerStatusByName(container.Name)
 	// If the container was never started before, we should start it.
 	// NOTE(random-liu): If all historical containers were GC'd, we'll also return true here.
@@ -80,6 +83,8 @@ func ShouldContainerBeRestarted(container *v1.Container, pod *v1.Pod, podStatus 
 	if status.State == ContainerStateUnknown || status.State == ContainerStateCreated {
 		return true
 	}
+
+	// ContainerStateExited 状态
 	// Check RestartPolicy for dead container
 	if pod.Spec.RestartPolicy == v1.RestartPolicyNever {
 		klog.V(4).InfoS("Already ran container, do nothing", "pod", klog.KObj(pod), "containerName", container.Name)
@@ -87,7 +92,7 @@ func ShouldContainerBeRestarted(container *v1.Container, pod *v1.Pod, podStatus 
 	}
 	if pod.Spec.RestartPolicy == v1.RestartPolicyOnFailure {
 		// Check the exit code.
-		if status.ExitCode == 0 {
+		if status.ExitCode == 0 { // 正常退出
 			klog.V(4).InfoS("Already successfully ran container, do nothing", "pod", klog.KObj(pod), "containerName", container.Name)
 			return false
 		}
@@ -98,6 +103,7 @@ func ShouldContainerBeRestarted(container *v1.Container, pod *v1.Pod, podStatus 
 // HashContainer returns the hash of the container. It is used to compare
 // the running container with its desired spec.
 // Note: remember to update hashValues in container_hash_test.go as well.
+// 根绝容器的json计算出来一个hash，用来对比spec配置变化
 func HashContainer(container *v1.Container) uint64 {
 	hash := fnv.New32a()
 	// Omit nil or empty field when calculating hash value
@@ -109,6 +115,7 @@ func HashContainer(container *v1.Container) uint64 {
 
 // envVarsToMap constructs a map of environment name to value from a slice
 // of env vars.
+// 环境变量放到map中
 func envVarsToMap(envs []EnvVar) map[string]string {
 	result := map[string]string{}
 	for _, env := range envs {
@@ -119,6 +126,7 @@ func envVarsToMap(envs []EnvVar) map[string]string {
 
 // v1EnvVarsToMap constructs a map of environment name to value from a slice
 // of env vars.
+// 环境变量放到map中
 func v1EnvVarsToMap(envs []v1.EnvVar) map[string]string {
 	result := map[string]string{}
 	for _, env := range envs {
@@ -131,6 +139,7 @@ func v1EnvVarsToMap(envs []v1.EnvVar) map[string]string {
 // ExpandContainerCommandOnlyStatic substitutes only static environment variable values from the
 // container environment definitions. This does *not* include valueFrom substitutions.
 // TODO: callers should use ExpandContainerCommandAndArgs with a fully resolved list of environment.
+// 用环境变量来填充containerCommand中引用的变量(例如$(name))
 func ExpandContainerCommandOnlyStatic(containerCommand []string, envs []v1.EnvVar) (command []string) {
 	mapping := expansion.MappingFuncFor(v1EnvVarsToMap(envs))
 	if len(containerCommand) != 0 {
@@ -142,6 +151,7 @@ func ExpandContainerCommandOnlyStatic(containerCommand []string, envs []v1.EnvVa
 }
 
 // ExpandContainerVolumeMounts expands the subpath of the given VolumeMount by replacing variable references with the values of given EnvVar.
+// 用环境变量展开VolumeMount.SubPathExpr里面的变量
 func ExpandContainerVolumeMounts(mount v1.VolumeMount, envs []EnvVar) (string, error) {
 
 	envmap := envVarsToMap(envs)
@@ -161,6 +171,7 @@ func ExpandContainerVolumeMounts(mount v1.VolumeMount, envs []EnvVar) (string, e
 }
 
 // ExpandContainerCommandAndArgs expands the given Container's command by replacing variable references `with the values of given EnvVar.
+// 用环境变量展开container的命令行
 func ExpandContainerCommandAndArgs(container *v1.Container, envs []EnvVar) (command []string, args []string) {
 	mapping := expansion.MappingFuncFor(envVarsToMap(envs))
 
@@ -180,6 +191,7 @@ func ExpandContainerCommandAndArgs(container *v1.Container, envs []EnvVar) (comm
 }
 
 // FilterEventRecorder creates an event recorder to record object's event except implicitly required container's, like infra container.
+// 一个EventRecorder wrapper，隐式启动的容器的事件不会记录
 func FilterEventRecorder(recorder record.EventRecorder) record.EventRecorder {
 	return &innerEventRecorder{
 		recorder: recorder,
@@ -225,12 +237,14 @@ func (irecorder *innerEventRecorder) AnnotatedEventf(object runtime.Object, anno
 
 // IsHostNetworkPod returns whether the host networking requested for the given Pod.
 // Pod must not be nil.
+// 是否使用宿主机的网络
 func IsHostNetworkPod(pod *v1.Pod) bool {
 	return pod.Spec.HostNetwork
 }
 
 // ConvertPodStatusToRunningPod returns Pod given PodStatus and container runtime string.
 // TODO(random-liu): Convert PodStatus to running Pod, should be deprecated soon
+// PodStatus转换为Pod
 func ConvertPodStatusToRunningPod(runtimeName string, podStatus *PodStatus) Pod {
 	runningPod := Pod{
 		ID:        podStatus.ID,
@@ -267,6 +281,7 @@ func ConvertPodStatusToRunningPod(runtimeName string, podStatus *PodStatus) Pod 
 // This is only needed because we need to return sandboxes as if they were
 // kubecontainer.Containers to avoid substantial changes to PLEG.
 // TODO: Remove this once it becomes obsolete.
+// PodSandboxState转换为State
 func SandboxToContainerState(state runtimeapi.PodSandboxState) State {
 	switch state {
 	case runtimeapi.PodSandboxState_SANDBOX_READY:
@@ -286,6 +301,7 @@ func FormatPod(pod *Pod) string {
 }
 
 // GetContainerSpec gets the container spec by containerName.
+// 从Pod.Spec中找到对应的container
 func GetContainerSpec(pod *v1.Pod, containerName string) *v1.Container {
 	var containerSpec *v1.Container
 	podutil.VisitContainers(&pod.Spec, podutil.AllFeatureEnabledContainers(), func(c *v1.Container, containerType podutil.ContainerType) bool {
@@ -299,6 +315,7 @@ func GetContainerSpec(pod *v1.Pod, containerName string) *v1.Container {
 }
 
 // HasPrivilegedContainer returns true if any of the containers in the pod are privileged.
+// 判断有没有容器的 SecurityContext.Privileged 被设置为true
 func HasPrivilegedContainer(pod *v1.Pod) bool {
 	var hasPrivileged bool
 	podutil.VisitContainers(&pod.Spec, podutil.AllFeatureEnabledContainers(), func(c *v1.Container, containerType podutil.ContainerType) bool {
@@ -312,6 +329,7 @@ func HasPrivilegedContainer(pod *v1.Pod) bool {
 }
 
 // HasWindowsHostProcessContainer returns true if any of the containers in a pod are HostProcess containers.
+// windows 才用这个，不知道干嘛的
 func HasWindowsHostProcessContainer(pod *v1.Pod) bool {
 	var hasHostProcess bool
 	podutil.VisitContainers(&pod.Spec, podutil.AllFeatureEnabledContainers(), func(c *v1.Container, containerType podutil.ContainerType) bool {
@@ -326,6 +344,7 @@ func HasWindowsHostProcessContainer(pod *v1.Pod) bool {
 }
 
 // AllContainersAreWindowsHostProcess returns true if all containres in a pod are HostProcess containers.
+// windows 才用这个，不知道干嘛的
 func AllContainersAreWindowsHostProcess(pod *v1.Pod) bool {
 	allHostProcess := true
 	podutil.VisitContainers(&pod.Spec, podutil.AllFeatureEnabledContainers(), func(c *v1.Container, containerType podutil.ContainerType) bool {
@@ -340,6 +359,7 @@ func AllContainersAreWindowsHostProcess(pod *v1.Pod) bool {
 }
 
 // MakePortMappings creates internal port mapping from api port mapping.
+// 容器暴露的port 导出
 func MakePortMappings(container *v1.Container) (ports []PortMapping) {
 	names := make(map[string]struct{})
 	for _, p := range container.Ports {

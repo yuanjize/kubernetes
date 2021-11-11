@@ -22,18 +22,19 @@ import (
 
 	"k8s.io/klog/v2"
 )
+// 定义了容器回收的参数和接口，实际GC的实现还是Runtime做的
 
 // GCPolicy specifies a policy for garbage collecting containers.
 type GCPolicy struct {
 	// Minimum age at which a container can be garbage collected, zero for no limit.
-	MinAge time.Duration
+	MinAge time.Duration // 已经停止的容器实例在系统中上的ttl存活时间
 
 	// Max number of dead containers any single pod (UID, container name) pair is
 	// allowed to have, less than zero for no limit.
-	MaxPerPodContainer int
+	MaxPerPodContainer int // 每个容器最多在系统中保存的最大已经停止的实例数量
 
 	// Max number of total dead containers, less than zero for no limit.
-	MaxContainers int
+	MaxContainers int // 系统中能够保存的最大已经停止容器实例数量
 }
 
 // GC manages garbage collection of dead containers.
@@ -61,10 +62,11 @@ type realContainerGC struct {
 	policy GCPolicy
 
 	// sourcesReadyProvider provides the readiness of kubelet configuration sources.
-	sourcesReadyProvider SourcesReadyProvider
+	sourcesReadyProvider SourcesReadyProvider // apiserver/http/file 这些数据源是否已经ok了
 }
 
 // NewContainerGC creates a new instance of GC with the specified policy.
+// 就是Runtime gc回收的wrapper，实际干活儿的还是Runtime
 func NewContainerGC(runtime Runtime, policy GCPolicy, sourcesReadyProvider SourcesReadyProvider) (GC, error) {
 	if policy.MinAge < 0 {
 		return nil, fmt.Errorf("invalid minimum garbage collection age: %v", policy.MinAge)

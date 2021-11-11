@@ -25,6 +25,7 @@ import (
 
 // OSInterface collects system level operations that need to be mocked out
 // during tests.
+// 文件相关系统调用的抽象
 type OSInterface interface {
 	MkdirAll(path string, perm os.FileMode) error
 	Symlink(oldname string, newname string) error

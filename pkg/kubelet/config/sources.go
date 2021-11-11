@@ -60,8 +60,9 @@ func (s *sourcesImpl) AddSource(source string) {
 }
 
 // AllReady returns true if each configured source is ready.
+// 判断是否所有source都是ready的了（收到source的SET操作就认为是ready的）
 func (s *sourcesImpl) AllReady() bool {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
-	return s.sourcesReadyFn(s.sourcesSeen)
+	return s.sourcesReadyFn(s.sourcesSeen)  // podConfig.seensourcce
 }

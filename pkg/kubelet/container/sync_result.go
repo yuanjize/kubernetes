@@ -23,14 +23,23 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 )
 
+/*
+  1.定义一些容器操作的error
+  2.定义一些容器sync和kill 的动作常量
+  3.PodSyncResult记录2中定义的action的操作结果集合
+ */
+
+
 // TODO(random-liu): We need to better organize runtime errors for introspection.
 
 // ErrCrashLoopBackOff returned when a container Terminated and Kubelet is backing off the restart.
+// kubelet在重启一个终结的容器，容器crash的时候就会显示这个
 var ErrCrashLoopBackOff = errors.New("CrashLoopBackOff")
 
 var (
 	// ErrContainerNotFound returned when a container in the given pod with the
 	// given container name was not found, amongst those managed by the kubelet.
+	// 找不到pod中配置的容器名的时候
 	ErrContainerNotFound = errors.New("no matching container")
 )
 

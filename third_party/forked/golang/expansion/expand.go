@@ -19,6 +19,7 @@ func syntaxWrap(input string) string {
 // implements the expansion semantics defined in the expansion spec; it
 // returns the input string wrapped in the expansion syntax if no mapping
 // for the input is found.
+// map中有input就直接返回，否则返回${input}
 func MappingFuncFor(context ...map[string]string) func(string) string {
 	return func(input string) string {
 		for _, vars := range context {
@@ -35,6 +36,7 @@ func MappingFuncFor(context ...map[string]string) func(string) string {
 // Expand replaces variable references in the input string according to
 // the expansion spec using the given mapping function to resolve the
 // values of variables.
+// 用mapping里面的值对input中的$(FOO)格式进行替换
 func Expand(input string, mapping func(string) string) string {
 	var buf bytes.Buffer
 	checkpoint := 0

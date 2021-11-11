@@ -27,6 +27,7 @@ import (
 )
 
 // ImplicitContainerPrefix is a container name prefix that will indicate that container was started implicitly (like the pod infra container).
+// 这个pod要隐式启动，不记录事件
 var ImplicitContainerPrefix = "implicitly required container "
 
 // GenerateContainerRef returns an *v1.ObjectReference which references the given container
@@ -35,6 +36,7 @@ var ImplicitContainerPrefix = "implicitly required container "
 //
 // This function will return an error if the provided Pod does not have a selfLink,
 // but we expect selfLink to be populated at all call sites for the function.
+// 返回一个Pod对container的资源引用，也就是container被pod的 ObjectReference.fieldPath使用
 func GenerateContainerRef(pod *v1.Pod, container *v1.Container) (*v1.ObjectReference, error) {
 	fieldPath, err := fieldPath(pod, container)
 	if err != nil {
@@ -51,6 +53,7 @@ func GenerateContainerRef(pod *v1.Pod, container *v1.Container) (*v1.ObjectRefer
 
 // fieldPath returns a fieldPath locating container within pod.
 // Returns an error if the container isn't part of the pod.
+// 从Pod的几个配置容器的地方根据容器名字返回对应的容器路径(可以认为是json中的路径)
 func fieldPath(pod *v1.Pod, container *v1.Container) (string, error) {
 	for i := range pod.Spec.Containers {
 		here := &pod.Spec.Containers[i]

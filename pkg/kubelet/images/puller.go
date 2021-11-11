@@ -46,6 +46,7 @@ func newParallelImagePuller(imageService kubecontainer.ImageService) imagePuller
 
 func (pip *parallelImagePuller) pullImage(spec kubecontainer.ImageSpec, pullSecrets []v1.Secret, pullChan chan<- pullResult, podSandboxConfig *runtimeapi.PodSandboxConfig) {
 	go func() {
+		// imageRef是imageId
 		imageRef, err := pip.imageService.PullImage(spec, pullSecrets, podSandboxConfig)
 		pullChan <- pullResult{
 			imageRef: imageRef,

@@ -97,6 +97,7 @@ func skipEmptyNames(visitor Visitor) Visitor {
 // spec in the given pod spec with type set in mask. If visitor returns false,
 // visiting is short-circuited. VisitContainers returns true if visiting completes,
 // false if visiting was short-circuited.
+// 遍历PodSpec的容器
 func VisitContainers(podSpec *v1.PodSpec, mask ContainerType, visitor ContainerVisitor) bool {
 	if mask&InitContainers != 0 {
 		for i := range podSpec.InitContainers {
