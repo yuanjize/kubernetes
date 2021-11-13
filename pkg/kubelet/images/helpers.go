@@ -25,6 +25,8 @@ import (
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 )
 
+//给ImageService套了一层皮, 可以限制限制拉取镜像的qps
+
 // throttleImagePulling wraps kubecontainer.ImageService to throttle image
 // pulling based on the given QPS and burst limits. If QPS is zero, defaults
 // to no throttling.

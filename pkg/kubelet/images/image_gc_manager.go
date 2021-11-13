@@ -39,6 +39,7 @@ import (
 
 // StatsProvider is an interface for fetching stats used during image garbage
 // collection.
+// 获取文件系统使用率
 type StatsProvider interface {
 	// ImageFsStats returns the stats of the image filesystem.
 	ImageFsStats() (*statsapi.FsStats, error)
@@ -46,40 +47,44 @@ type StatsProvider interface {
 
 // ImageGCManager is an interface for managing lifecycle of all images.
 // Implementation is thread-safe.
+// 管理image的生命周期，做垃圾回收
 type ImageGCManager interface {
 	// Applies the garbage collection policy. Errors include being unable to free
 	// enough space as per the garbage collection policy.
 	GarbageCollect() error
 
 	// Start async garbage collection of images.
-	Start()
+	Start() // 定时更新内存的image状态和缓存
 
-	GetImageList() ([]container.Image, error)
+	GetImageList() ([]container.Image, error) // 从缓存获取当前image列表
 
-	// Delete all unused images.
+	// Delete all unused images. 删除所有不用的image
 	DeleteUnusedImages() error
 }
 
 // ImageGCPolicy is a policy for garbage collecting images. Policy defines an allowed band in
 // which garbage collection will be run.
+// image垃圾回收参数
 type ImageGCPolicy struct {
 	// Any usage above this threshold will always trigger garbage collection.
 	// This is the highest usage we will allow.
-	HighThresholdPercent int
+	HighThresholdPercent int // 使用空间超过这个值将触发GC
 
 	// Any usage below this threshold will never trigger garbage collection.
 	// This is the lowest threshold we will try to garbage collect to.
-	LowThresholdPercent int
+	LowThresholdPercent int // 小于这个值不会进行GC，进行GC时要尽量让gc之后的剩余空间小于这个值
 
 	// Minimum age at which an image can be garbage collected.
-	MinAge time.Duration
+	MinAge time.Duration  // image闲置时间要超过这个值才能被删除
 }
 
+// ImageGCManager实现
 type realImageGCManager struct {
 	// Container runtime
 	runtime container.Runtime
 
 	// Records of images and their use.
+	// 记录当前节点上的镜像
 	imageRecords     map[string]*imageRecord
 	imageRecordsLock sync.Mutex
 
@@ -99,7 +104,7 @@ type realImageGCManager struct {
 	initialized bool
 
 	// imageCache is the cache of latest image list.
-	imageCache imageCache
+	imageCache imageCache  // 当前机器的image的缓存
 
 	// sandbox image exempted from GC
 	sandboxImage string
@@ -137,15 +142,16 @@ func (i *imageCache) get() []container.Image {
 }
 
 // Information about the images we track.
+// 缓存的image使用信息，所有在本机的image都会有这个记录
 type imageRecord struct {
 	// Time when this image was first detected.
-	firstDetected time.Time
+	firstDetected time.Time // 第一次detect到它的时间
 
 	// Time when we last saw this image being used.
-	lastUsed time.Time
+	lastUsed time.Time  // 上一次监测到它被pod使用事件
 
 	// Size of the image in bytes.
-	size int64
+	size int64 // 镜像大小
 }
 
 // NewImageGCManager instantiates a new ImageGCManager object.
@@ -173,7 +179,7 @@ func NewImageGCManager(runtime container.Runtime, statsProvider StatsProvider, r
 
 	return im, nil
 }
-
+//Start 1.定时检测正在使用的image 2.定时把当前机器所有的节点放到cache缓存中
 func (im *realImageGCManager) Start() {
 	go wait.Until(func() {
 		// Initial detection make detected time "unknown" in the past.
@@ -181,6 +187,7 @@ func (im *realImageGCManager) Start() {
 		if im.initialized {
 			ts = time.Now()
 		}
+		// 定时检测正在使用的image
 		_, err := im.detectImages(ts)
 		if err != nil {
 			klog.InfoS("Failed to monitor images", "err", err)
@@ -190,6 +197,7 @@ func (im *realImageGCManager) Start() {
 	}, 5*time.Minute, wait.NeverStop)
 
 	// Start a goroutine periodically updates image cache.
+	// 定时把当前机器所有的节点放到cache缓存中
 	go wait.Until(func() {
 		images, err := im.runtime.ListImages()
 		if err != nil {
@@ -202,29 +210,34 @@ func (im *realImageGCManager) Start() {
 }
 
 // Get a list of images on this node
+// 当前节点的所有image，这个是从缓存取
 func (im *realImageGCManager) GetImageList() ([]container.Image, error) {
 	return im.imageCache.get(), nil
 }
 
+// 返回的值的 sandboxImage+pod使用的image的集合（正在被使用的image集合），更新imageRecords
 func (im *realImageGCManager) detectImages(detectTime time.Time) (sets.String, error) {
 	imagesInUse := sets.NewString()
 
 	// Always consider the container runtime pod sandbox image in use
+	// sandboxImage使用的image
 	imageRef, err := im.runtime.GetImageRef(container.ImageSpec{Image: im.sandboxImage})
 	if err == nil && imageRef != "" {
 		imagesInUse.Insert(imageRef)
 	}
-
+    // 当前机器上的所有的image
 	images, err := im.runtime.ListImages()
 	if err != nil {
 		return imagesInUse, err
 	}
+	// 所有pods
 	pods, err := im.runtime.GetPods(true)
 	if err != nil {
 		return imagesInUse, err
 	}
 
 	// Make a set of images in use by containers.
+	// 所有被pods使用的镜像
 	for _, pod := range pods {
 		for _, container := range pod.Containers {
 			klog.V(5).InfoS("Container uses image", "pod", klog.KRef(pod.Namespace, pod.Name), "containerName", container.Name, "containerImage", container.Image, "imageID", container.ImageID)
@@ -234,7 +247,7 @@ func (im *realImageGCManager) detectImages(detectTime time.Time) (sets.String, e
 
 	// Add new images and record those being used.
 	now := time.Now()
-	currentImages := sets.NewString()
+	currentImages := sets.NewString() // 当前节点上所有镜像
 	im.imageRecordsLock.Lock()
 	defer im.imageRecordsLock.Unlock()
 	for _, image := range images {
@@ -250,16 +263,19 @@ func (im *realImageGCManager) detectImages(detectTime time.Time) (sets.String, e
 		}
 
 		// Set last used time to now if the image is being used.
+		// 判断该image是否有pod正在使用，如果有就设置最后一次使用的事件
 		if isImageUsed(image.ID, imagesInUse) {
 			klog.V(5).InfoS("Setting Image ID lastUsed", "imageID", image.ID, "lastUsed", now)
 			im.imageRecords[image.ID].lastUsed = now
 		}
 
 		klog.V(5).InfoS("Image ID has size", "imageID", image.ID, "size", image.Size)
-		im.imageRecords[image.ID].size = image.Size
+		//
+		im.imageRecords[image.ID].size = image.Size // 更新镜像大小
 	}
 
 	// Remove old images from our records.
+	// 移除不用的的image
 	for image := range im.imageRecords {
 		if !currentImages.Has(image) {
 			klog.V(5).InfoS("Image ID is no longer present; removing from imageRecords", "imageID", image)
@@ -270,8 +286,10 @@ func (im *realImageGCManager) detectImages(detectTime time.Time) (sets.String, e
 	return imagesInUse, nil
 }
 
+// GarbageCollect 根据文件系统信息，和收集的image使用情况，还有配置的GC阀值来进行image回收
 func (im *realImageGCManager) GarbageCollect() error {
 	// Get disk usage on disk holding images.
+	// 获取文件系统使用信息
 	fsStats, err := im.statsProvider.ImageFsStats()
 	if err != nil {
 		return err
@@ -298,15 +316,17 @@ func (im *realImageGCManager) GarbageCollect() error {
 	}
 
 	// If over the max threshold, free enough to place us at the lower threshold.
+	// 已使用的空间比例
 	usagePercent := 100 - int(available*100/capacity)
-	if usagePercent >= im.policy.HighThresholdPercent {
+	if usagePercent >= im.policy.HighThresholdPercent { // 使用空间超过阀值上限，触发GC
+		// 要释放amountToFree空间才能到达LowThresholdPercent的情况
 		amountToFree := capacity*int64(100-im.policy.LowThresholdPercent)/100 - available
 		klog.InfoS("Disk usage on image filesystem is over the high threshold, trying to free bytes down to the low threshold", "usage", usagePercent, "highThreshold", im.policy.HighThresholdPercent, "amountToFree", amountToFree, "lowThreshold", im.policy.LowThresholdPercent)
-		freed, err := im.freeSpace(amountToFree, time.Now())
+		freed, err := im.freeSpace(amountToFree, time.Now())  // image回收
 		if err != nil {
 			return err
 		}
-
+        // 释放的空间没有达到要求
 		if freed < amountToFree {
 			err := fmt.Errorf("failed to garbage collect required amount of images. Wanted to free %d bytes, but freed %d bytes", amountToFree, freed)
 			im.recorder.Eventf(im.nodeRef, v1.EventTypeWarning, events.FreeDiskSpaceFailed, err.Error())
@@ -317,6 +337,7 @@ func (im *realImageGCManager) GarbageCollect() error {
 	return nil
 }
 
+// DeleteUnusedImages 尽量把所有符合要求的闲置image都删除
 func (im *realImageGCManager) DeleteUnusedImages() error {
 	klog.InfoS("Attempting to delete unused images")
 	_, err := im.freeSpace(math.MaxInt64, time.Now())
@@ -329,6 +350,8 @@ func (im *realImageGCManager) DeleteUnusedImages() error {
 // bytes freed is always returned.
 // Note that error may be nil and the number of bytes free may be less
 // than bytesToFree.
+// 累计删除指定大小bytesToFree的image
+// 使用detectImages得到所有正在被使用的image，然后根据imageRecords找到没有被使用的image，然后挨个删除，直到最后删除的空间满足了imageRecords大小
 func (im *realImageGCManager) freeSpace(bytesToFree int64, freeTime time.Time) (int64, error) {
 	imagesInUse, err := im.detectImages(freeTime)
 	if err != nil {
@@ -340,6 +363,7 @@ func (im *realImageGCManager) freeSpace(bytesToFree int64, freeTime time.Time) (
 
 	// Get all images in eviction order.
 	images := make([]evictionInfo, 0, len(im.imageRecords))
+	// 获取所有没有在使用image
 	for image, record := range im.imageRecords {
 		if isImageUsed(image, imagesInUse) {
 			klog.V(5).InfoS("Image ID is being used", "imageID", image)
@@ -354,7 +378,7 @@ func (im *realImageGCManager) freeSpace(bytesToFree int64, freeTime time.Time) (
 
 	// Delete unused images until we've freed up enough space.
 	var deletionErrors []error
-	spaceFreed := int64(0)
+	spaceFreed := int64(0)  // 记录已经删除的image的大小
 	for _, image := range images {
 		klog.V(5).InfoS("Evaluating image ID for possible garbage collection", "imageID", image.id)
 		// Images that are currently in used were given a newer lastUsed.
@@ -373,6 +397,7 @@ func (im *realImageGCManager) freeSpace(bytesToFree int64, freeTime time.Time) (
 
 		// Remove image. Continue despite errors.
 		klog.InfoS("Removing image to free bytes", "imageID", image.id, "size", image.size)
+		// 删除image
 		err := im.runtime.RemoveImage(container.ImageSpec{Image: image.id})
 		if err != nil {
 			deletionErrors = append(deletionErrors, err)
@@ -381,7 +406,7 @@ func (im *realImageGCManager) freeSpace(bytesToFree int64, freeTime time.Time) (
 		delete(im.imageRecords, image.id)
 		spaceFreed += image.size
 
-		if spaceFreed >= bytesToFree {
+		if spaceFreed >= bytesToFree { // 回收够了直接返回
 			break
 		}
 	}
@@ -398,7 +423,7 @@ type evictionInfo struct {
 }
 
 type byLastUsedAndDetected []evictionInfo
-
+// firstDetected/lastUsed比较早的先被回收，因为这种比较可能以后不再被使用
 func (ev byLastUsedAndDetected) Len() int      { return len(ev) }
 func (ev byLastUsedAndDetected) Swap(i, j int) { ev[i], ev[j] = ev[j], ev[i] }
 func (ev byLastUsedAndDetected) Less(i, j int) bool {
@@ -408,7 +433,7 @@ func (ev byLastUsedAndDetected) Less(i, j int) bool {
 	}
 	return ev[i].lastUsed.Before(ev[j].lastUsed)
 }
-
+// 判断imageID是否(有pod)正在被使用
 func isImageUsed(imageID string, imagesInUse sets.String) bool {
 	// Check the image ID.
 	if _, ok := imagesInUse[imageID]; ok {

@@ -39,7 +39,7 @@ var _, _ imagePuller = &parallelImagePuller{}, &serialImagePuller{}
 type parallelImagePuller struct {
 	imageService kubecontainer.ImageService
 }
-
+// 并发拉取image，不阻塞
 func newParallelImagePuller(imageService kubecontainer.ImageService) imagePuller {
 	return &parallelImagePuller{imageService}
 }
@@ -57,7 +57,7 @@ func (pip *parallelImagePuller) pullImage(spec kubecontainer.ImageSpec, pullSecr
 
 // Maximum number of image pull requests than can be queued.
 const maxImagePullRequests = 10
-
+// 顺序拉取image，有可能阻塞
 type serialImagePuller struct {
 	imageService kubecontainer.ImageService
 	pullRequests chan *imagePullRequest

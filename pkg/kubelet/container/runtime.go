@@ -150,9 +150,9 @@ type ImageService interface {
 	// the local storage. It returns ("", nil) if the image isn't in the local storage.
 	GetImageRef(image ImageSpec) (string, error)
 	// ListImages gets all images currently on the machine.
-	ListImages() ([]Image, error)
+	ListImages() ([]Image, error) // 当前机器上的所有的image
 	// RemoveImage removes the specified image.
-	RemoveImage(image ImageSpec) error
+	RemoveImage(image ImageSpec) error // 从磁盘删除指定的image
 	// ImageStats returns Image statistics.
 	ImageStats() (*ImageStats, error)
 }
