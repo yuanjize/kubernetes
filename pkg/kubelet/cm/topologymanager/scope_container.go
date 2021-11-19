@@ -42,14 +42,16 @@ func NewContainerScope(policy Policy) Scope {
 		},
 	}
 }
-
+// 分配资源
 func (s *containerScope) Admit(pod *v1.Pod) lifecycle.PodAdmitResult {
 	// Exception - Policy : none
 	if s.policy.Name() == PolicyNone {
+		// 直接分配资源
 		return s.admitPolicyNone(pod)
 	}
 
 	for _, container := range append(pod.Spec.InitContainers, pod.Spec.Containers...) {
+		// 选出来最合适的
 		bestHint, admit := s.calculateAffinity(pod, &container)
 		klog.InfoS("Best TopologyHint", "bestHint", bestHint, "pod", klog.KObj(pod), "containerName", container.Name)
 
@@ -57,6 +59,7 @@ func (s *containerScope) Admit(pod *v1.Pod) lifecycle.PodAdmitResult {
 			return admission.GetPodAdmitResult(&TopologyAffinityError{})
 		}
 		klog.InfoS("Topology Affinity", "bestHint", bestHint, "pod", klog.KObj(pod), "containerName", container.Name)
+		// 存起来选出的最合适的
 		s.setTopologyHints(string(pod.UID), container.Name, bestHint)
 
 		err := s.allocateAlignedResources(pod, &container)
@@ -66,7 +69,7 @@ func (s *containerScope) Admit(pod *v1.Pod) lifecycle.PodAdmitResult {
 	}
 	return admission.GetPodAdmitResult(nil)
 }
-
+// 从各个provider获取各种资源
 func (s *containerScope) accumulateProvidersHints(pod *v1.Pod, container *v1.Container) []map[string][]TopologyHint {
 	var providersHints []map[string][]TopologyHint
 
@@ -78,7 +81,7 @@ func (s *containerScope) accumulateProvidersHints(pod *v1.Pod, container *v1.Con
 	}
 	return providersHints
 }
-
+// 从各个provider获取各种资源，然后选出来最好的TopologyHint
 func (s *containerScope) calculateAffinity(pod *v1.Pod, container *v1.Container) (TopologyHint, bool) {
 	providersHints := s.accumulateProvidersHints(pod, container)
 	bestHint, admit := s.policy.Merge(providersHints)

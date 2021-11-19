@@ -26,6 +26,7 @@ import (
 )
 
 // Checkpoint provides the process checkpoint data
+// Checkpoint定义了checkpoint数据的序列化和反序列化
 type Checkpoint interface {
 	MarshalCheckpoint() ([]byte, error)
 	UnmarshalCheckpoint(blob []byte) error
@@ -33,6 +34,7 @@ type Checkpoint interface {
 }
 
 // CheckpointManager provides the interface to manage checkpoint
+// CheckpointManager定义了checkout point的持久化存储还有增删改查
 type CheckpointManager interface {
 	// CreateCheckpoint persists checkpoint in CheckpointStore. checkpointKey is the key for utilstore to locate checkpoint.
 	// For file backed utilstore, checkpointKey is the file name to write the checkpoint data.
@@ -42,7 +44,7 @@ type CheckpointManager interface {
 	// WARNING: RemoveCheckpoint will not return error if checkpoint does not exist.
 	RemoveCheckpoint(checkpointKey string) error
 	// ListCheckpoint returns the list of existing checkpoints.
-	ListCheckpoints() ([]string, error)
+	ListCheckpoints() ([]string, error) // 列出所有Checkpoint的Key
 }
 
 // impl is an implementation of CheckpointManager. It persists checkpoint in CheckpointStore

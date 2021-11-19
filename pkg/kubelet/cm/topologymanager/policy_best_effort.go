@@ -15,10 +15,10 @@ limitations under the License.
 */
 
 package topologymanager
-
+// 尽力选出最好的hint
 type bestEffortPolicy struct {
 	//List of NUMA Nodes available on the underlying machine
-	numaNodes []int
+	numaNodes []int // 底层机器可以用的numa颗数
 }
 
 var _ Policy = &bestEffortPolicy{}
@@ -40,8 +40,11 @@ func (p *bestEffortPolicy) canAdmitPodResult(hint *TopologyHint) bool {
 }
 
 func (p *bestEffortPolicy) Merge(providersHints []map[string][]TopologyHint) (TopologyHint, bool) {
+	// flat hints
 	filteredProvidersHints := filterProvidersHints(providersHints)
+	// 选出最佳的 hints
 	bestHint := mergeFilteredHints(p.numaNodes, filteredProvidersHints)
+	// true
 	admit := p.canAdmitPodResult(&bestHint)
 	return bestHint, admit
 }

@@ -27,15 +27,15 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/cm/containermap"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 )
-
+// 这里其实就是个内存缓存cpuset，并且利用checkpoint机制进行持久化和恢复
 var _ State = &stateCheckpoint{}
-
+// 所有的写操作都会持久化到checkpoint,NewCheckpointState的时候会自动从checkpoint恢复
 type stateCheckpoint struct {
 	mux               sync.RWMutex
 	policyName        string
-	cache             State
+	cache             State  // 内存的缓存的cpuset
 	checkpointManager checkpointmanager.CheckpointManager
-	checkpointName    string
+	checkpointName    string  // checkpoint的key
 	initialContainers containermap.ContainerMap
 }
 
@@ -63,6 +63,7 @@ func NewCheckpointState(stateDir, checkpointName, policyName string, initialCont
 }
 
 // migrateV1CheckpointToV2Checkpoint() converts checkpoints from the v1 format to the v2 format
+// CPUManagerCheckpointV1转换成CPUManagerCheckpointV2
 func (sc *stateCheckpoint) migrateV1CheckpointToV2Checkpoint(src *CPUManagerCheckpointV1, dst *CPUManagerCheckpointV2) error {
 	if src.PolicyName != "" {
 		dst.PolicyName = src.PolicyName
@@ -87,6 +88,7 @@ func (sc *stateCheckpoint) migrateV1CheckpointToV2Checkpoint(src *CPUManagerChec
 }
 
 // restores state from a checkpoint and creates it if it doesn't exist
+// 从checkpoint里面恢复数据
 func (sc *stateCheckpoint) restoreState() error {
 	sc.mux.Lock()
 	defer sc.mux.Unlock()
@@ -95,6 +97,7 @@ func (sc *stateCheckpoint) restoreState() error {
 	checkpointV1 := newCPUManagerCheckpointV1()
 	checkpointV2 := newCPUManagerCheckpointV2()
 
+	// 获取checkpoint
 	if err = sc.checkpointManager.GetCheckpoint(sc.checkpointName, checkpointV1); err != nil {
 		checkpointV1 = &CPUManagerCheckpointV1{} // reset it back to 0
 		if err = sc.checkpointManager.GetCheckpoint(sc.checkpointName, checkpointV2); err != nil {
@@ -104,7 +107,7 @@ func (sc *stateCheckpoint) restoreState() error {
 			return err
 		}
 	}
-
+    // CPUManagerCheckpointV1转化成CPUManagerCheckpointV2
 	if err = sc.migrateV1CheckpointToV2Checkpoint(checkpointV1, checkpointV2); err != nil {
 		return fmt.Errorf("error migrating v1 checkpoint state to v2 checkpoint state: %s", err)
 	}
@@ -113,11 +116,12 @@ func (sc *stateCheckpoint) restoreState() error {
 		return fmt.Errorf("configured policy %q differs from state checkpoint policy %q", sc.policyName, checkpointV2.PolicyName)
 	}
 
+	// 获取默认cpuset
 	var tmpDefaultCPUSet cpuset.CPUSet
 	if tmpDefaultCPUSet, err = cpuset.Parse(checkpointV2.DefaultCPUSet); err != nil {
 		return fmt.Errorf("could not parse default cpu set %q: %v", checkpointV2.DefaultCPUSet, err)
 	}
-
+    // 从checkpoint恢复出ContainerCPUAssignments
 	var tmpContainerCPUSet cpuset.CPUSet
 	tmpAssignments := ContainerCPUAssignments{}
 	for pod := range checkpointV2.Entries {
@@ -140,6 +144,7 @@ func (sc *stateCheckpoint) restoreState() error {
 }
 
 // saves state to a checkpoint, caller is responsible for locking
+// 保存当前状态到checkpoint
 func (sc *stateCheckpoint) storeState() error {
 	checkpoint := NewCPUManagerCheckpoint()
 	checkpoint.PolicyName = sc.policyName

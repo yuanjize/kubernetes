@@ -98,6 +98,7 @@ type Store interface {
 }
 
 // TopologyHint is a struct containing the NUMANodeAffinity for a Container
+// 包含NUMANodeAffinity的亲和性
 type TopologyHint struct {
 	NUMANodeAffinity bitmask.BitMask
 	// Preferred is set to true when the NUMANodeAffinity encodes a preferred

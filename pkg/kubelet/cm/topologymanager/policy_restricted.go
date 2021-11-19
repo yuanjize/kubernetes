@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 package topologymanager
-
+// 和bestEffortPolicy基本一样，只有canAdmitPodResult不一样
 type restrictedPolicy struct {
 	bestEffortPolicy
 }

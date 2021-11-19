@@ -28,6 +28,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/checkpointmanager/errors"
 )
 
+// 定义了2个版本的CPUManagerCheckpoint，主要是通过json序列化
 var _ checkpointmanager.Checkpoint = &CPUManagerCheckpointV1{}
 var _ checkpointmanager.Checkpoint = &CPUManagerCheckpointV2{}
 var _ checkpointmanager.Checkpoint = &CPUManagerCheckpoint{}

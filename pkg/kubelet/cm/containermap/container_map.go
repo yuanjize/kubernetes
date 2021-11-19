@@ -40,11 +40,13 @@ func (cm ContainerMap) Add(podUID, containerName, containerID string) {
 }
 
 // RemoveByContainerID removes a mapping of (containerID)->(podUID, containerName) from the ContainerMap
+// 根据containerID 从map删除对应的项
 func (cm ContainerMap) RemoveByContainerID(containerID string) {
 	delete(cm, containerID)
 }
 
 // RemoveByContainerRef removes a mapping of (containerID)->(podUID, containerName) from the ContainerMap
+// 根据podUID, containerName从map中删除
 func (cm ContainerMap) RemoveByContainerRef(podUID, containerName string) {
 	containerID, err := cm.GetContainerID(podUID, containerName)
 	if err == nil {
@@ -53,6 +55,7 @@ func (cm ContainerMap) RemoveByContainerRef(podUID, containerName string) {
 }
 
 // GetContainerID retrieves a ContainerID from the ContainerMap
+// 从map里面根据podUID和containerName找到对应的ContainerID
 func (cm ContainerMap) GetContainerID(podUID, containerName string) (string, error) {
 	for key, val := range cm {
 		if val.podUID == podUID && val.containerName == containerName {
@@ -63,6 +66,7 @@ func (cm ContainerMap) GetContainerID(podUID, containerName string) (string, err
 }
 
 // GetContainerRef retrieves a (podUID, containerName) pair from the ContainerMap
+// 根据containerID返回podUID和containerName
 func (cm ContainerMap) GetContainerRef(containerID string) (string, string, error) {
 	if _, exists := cm[containerID]; !exists {
 		return "", "", fmt.Errorf("containerID %s not in ContainerMap", containerID)

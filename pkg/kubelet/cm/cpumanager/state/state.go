@@ -21,6 +21,7 @@ import (
 )
 
 // ContainerCPUAssignments type used in cpu manager state
+// 记录了CPUSet，每层分别记录了：pod->container->CPUSet
 type ContainerCPUAssignments map[string]map[string]cpuset.CPUSet
 
 // Clone returns a copy of ContainerCPUAssignments
@@ -52,6 +53,7 @@ type writer interface {
 }
 
 // State interface provides methods for tracking and setting cpu/pod assignment
+// 读写pod/container的cpuset
 type State interface {
 	Reader
 	writer

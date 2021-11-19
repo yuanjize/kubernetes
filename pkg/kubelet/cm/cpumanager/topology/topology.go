@@ -29,21 +29,25 @@ import (
 type NUMANodeInfo map[int]cpuset.CPUSet
 
 // CPUDetails is a map from CPU ID to Core ID, Socket ID, and NUMA ID.
+// key是cpuid，value是该cpu的信息
 type CPUDetails map[int]CPUInfo
 
 // CPUTopology contains details of node cpu, where :
 // CPU  - logical CPU, cadvisor - thread
 // Core - physical CPU, cadvisor - Core
 // Socket - socket, cadvisor - Node
+// 节点的cpu信息
+// 定义了一些节点上的cpu信息，cpu个数，socket个数，numa个数等等。
 type CPUTopology struct {
-	NumCPUs    int
-	NumCores   int
-	NumSockets int
+	NumCPUs    int  // 线程个数
+	NumCores   int  // cpu核心个数
+	NumSockets int // cpu插槽个数
 	CPUDetails CPUDetails
 }
 
 // CPUsPerCore returns the number of logical CPUs are associated with
 // each core.
+// 一个核可以有多少线程/逻辑cpu，4核8线程那么这个值就是2
 func (topo *CPUTopology) CPUsPerCore() int {
 	if topo.NumCores == 0 {
 		return 0
@@ -53,6 +57,7 @@ func (topo *CPUTopology) CPUsPerCore() int {
 
 // CPUsPerSocket returns the number of logical CPUs are associated with
 // each socket.
+// 每个插槽有多少线程/逻辑cpu
 func (topo *CPUTopology) CPUsPerSocket() int {
 	if topo.NumSockets == 0 {
 		return 0
@@ -68,6 +73,7 @@ type CPUInfo struct {
 }
 
 // KeepOnly returns a new CPUDetails object with only the supplied cpus.
+// 只返回CPUSet指定id的cpuInfo
 func (d CPUDetails) KeepOnly(cpus cpuset.CPUSet) CPUDetails {
 	result := CPUDetails{}
 	for cpu, info := range d {
@@ -80,6 +86,7 @@ func (d CPUDetails) KeepOnly(cpus cpuset.CPUSet) CPUDetails {
 
 // NUMANodes returns all of the NUMANode IDs associated with the CPUs in this
 // CPUDetails.
+// 返回所有的NUMANodeID
 func (d CPUDetails) NUMANodes() cpuset.CPUSet {
 	b := cpuset.NewBuilder()
 	for _, info := range d {
@@ -90,6 +97,7 @@ func (d CPUDetails) NUMANodes() cpuset.CPUSet {
 
 // NUMANodesInSockets returns all of the logical NUMANode IDs associated with
 // the given socket IDs in this CPUDetails.
+// 返回所有传入socket对应的NUMANodeID
 func (d CPUDetails) NUMANodesInSockets(ids ...int) cpuset.CPUSet {
 	b := cpuset.NewBuilder()
 	for _, id := range ids {
@@ -104,6 +112,7 @@ func (d CPUDetails) NUMANodesInSockets(ids ...int) cpuset.CPUSet {
 
 // Sockets returns all of the socket IDs associated with the CPUs in this
 // CPUDetails.
+// 返回所有的socketid集合
 func (d CPUDetails) Sockets() cpuset.CPUSet {
 	b := cpuset.NewBuilder()
 	for _, info := range d {
@@ -114,6 +123,7 @@ func (d CPUDetails) Sockets() cpuset.CPUSet {
 
 // CPUsInSockets returns all of the logical CPU IDs associated with the given
 // socket IDs in this CPUDetails.
+// 返回所有符合socketid的cpuid集合
 func (d CPUDetails) CPUsInSockets(ids ...int) cpuset.CPUSet {
 	b := cpuset.NewBuilder()
 	for _, id := range ids {
@@ -128,6 +138,7 @@ func (d CPUDetails) CPUsInSockets(ids ...int) cpuset.CPUSet {
 
 // SocketsInNUMANodes returns all of the logical Socket IDs associated with the
 // given NUMANode IDs in this CPUDetails.
+// 返回出入的numaid的socketid集合
 func (d CPUDetails) SocketsInNUMANodes(ids ...int) cpuset.CPUSet {
 	b := cpuset.NewBuilder()
 	for _, id := range ids {
@@ -142,6 +153,7 @@ func (d CPUDetails) SocketsInNUMANodes(ids ...int) cpuset.CPUSet {
 
 // Cores returns all of the core IDs associated with the CPUs in this
 // CPUDetails.
+// 返回所有的coreid
 func (d CPUDetails) Cores() cpuset.CPUSet {
 	b := cpuset.NewBuilder()
 	for _, info := range d {
@@ -179,6 +191,7 @@ func (d CPUDetails) CoresInSockets(ids ...int) cpuset.CPUSet {
 }
 
 // CPUs returns all of the logical CPU IDs in this CPUDetails.
+// 返回所有的cpuid
 func (d CPUDetails) CPUs() cpuset.CPUSet {
 	b := cpuset.NewBuilder()
 	for cpuID := range d {

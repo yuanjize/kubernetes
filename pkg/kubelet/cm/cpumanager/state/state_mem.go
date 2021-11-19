@@ -22,7 +22,7 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 )
-
+// state接口的内存实现
 type stateMemory struct {
 	sync.RWMutex
 	assignments   ContainerCPUAssignments

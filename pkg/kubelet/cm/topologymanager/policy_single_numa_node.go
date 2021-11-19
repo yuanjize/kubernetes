@@ -19,7 +19,7 @@ package topologymanager
 import (
 	"k8s.io/kubernetes/pkg/kubelet/cm/topologymanager/bitmask"
 )
-
+// 只要单颗的
 type singleNumaNodePolicy struct {
 	//List of NUMA Nodes available on the underlying machine
 	numaNodes []int
@@ -44,6 +44,7 @@ func (p *singleNumaNodePolicy) canAdmitPodResult(hint *TopologyHint) bool {
 }
 
 // Return hints that have valid bitmasks with exactly one bit set.
+// 过滤，只要只有1颗或者没有NUMANodeAffinity的，Preferred必须是true
 func filterSingleNumaHints(allResourcesHints [][]TopologyHint) [][]TopologyHint {
 	var filteredResourcesHints [][]TopologyHint
 	for _, oneResourceHints := range allResourcesHints {

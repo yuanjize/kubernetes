@@ -127,7 +127,7 @@ func (s *scope) RemoveContainer(containerID string) error {
 
 	return nil
 }
-
+// 给每个容器直接分配资源
 func (s *scope) admitPolicyNone(pod *v1.Pod) lifecycle.PodAdmitResult {
 	for _, container := range append(pod.Spec.InitContainers, pod.Spec.Containers...) {
 		err := s.allocateAlignedResources(pod, &container)
@@ -140,6 +140,7 @@ func (s *scope) admitPolicyNone(pod *v1.Pod) lifecycle.PodAdmitResult {
 
 // It would be better to implement this function in topologymanager instead of scope
 // but topologymanager do not track providers anymore
+// 分配资源
 func (s *scope) allocateAlignedResources(pod *v1.Pod, container *v1.Container) error {
 	for _, provider := range s.hintProviders {
 		err := provider.Allocate(pod, container)

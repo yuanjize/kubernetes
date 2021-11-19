@@ -28,6 +28,11 @@ import (
 	"k8s.io/klog/v2"
 )
 
+/*
+  定义了CPUSet，他就是一个Set，存储的是cpuID
+  主要有两个功能，从linux proc下面读出来的字符串和CPUSet进行互相转换
+*/
+
 // Builder is a mutable builder for CPUSet. Functions that mutate instances
 // of this type are not thread-safe.
 type Builder struct {
@@ -109,6 +114,7 @@ func (s CPUSet) Equals(s2 CPUSet) bool {
 
 // Filter returns a new CPU set that contains all of the elements from this
 // set that match the supplied predicate, without mutating the source set.
+// 根据predicate去过滤当前集合，返回符合要求的集合
 func (s CPUSet) Filter(predicate func(int) bool) CPUSet {
 	b := NewBuilder()
 	for cpu := range s.elems {
@@ -122,6 +128,7 @@ func (s CPUSet) Filter(predicate func(int) bool) CPUSet {
 // FilterNot returns a new CPU set that contains all of the elements from this
 // set that do not match the supplied predicate, without mutating the source
 // set.
+// 和上个函数一样，只不过是所有不符合predicate的set
 func (s CPUSet) FilterNot(predicate func(int) bool) CPUSet {
 	b := NewBuilder()
 	for cpu := range s.elems {
@@ -133,6 +140,7 @@ func (s CPUSet) FilterNot(predicate func(int) bool) CPUSet {
 }
 
 // IsSubsetOf returns true if the supplied set contains all the elements
+// s是否是s2的子集
 func (s CPUSet) IsSubsetOf(s2 CPUSet) bool {
 	result := true
 	for cpu := range s.elems {
@@ -147,6 +155,7 @@ func (s CPUSet) IsSubsetOf(s2 CPUSet) bool {
 // Union returns a new CPU set that contains all of the elements from this
 // set and all of the elements from the supplied set, without mutating
 // either source set.
+// s1和s2取并集
 func (s CPUSet) Union(s2 CPUSet) CPUSet {
 	b := NewBuilder()
 	for cpu := range s.elems {
@@ -161,6 +170,7 @@ func (s CPUSet) Union(s2 CPUSet) CPUSet {
 // UnionAll returns a new CPU set that contains all of the elements from this
 // set and all of the elements from the supplied sets, without mutating
 // either source set.
+// 所有的取并集
 func (s CPUSet) UnionAll(s2 []CPUSet) CPUSet {
 	b := NewBuilder()
 	for cpu := range s.elems {
@@ -177,6 +187,7 @@ func (s CPUSet) UnionAll(s2 []CPUSet) CPUSet {
 // Intersection returns a new CPU set that contains all of the elements
 // that are present in both this set and the supplied set, without mutating
 // either source set.
+// 取交集
 func (s CPUSet) Intersection(s2 CPUSet) CPUSet {
 	return s.Filter(func(cpu int) bool { return s2.Contains(cpu) })
 }
@@ -184,12 +195,14 @@ func (s CPUSet) Intersection(s2 CPUSet) CPUSet {
 // Difference returns a new CPU set that contains all of the elements that
 // are present in this set and not the supplied set, without mutating either
 // source set.
+// 取差集
 func (s CPUSet) Difference(s2 CPUSet) CPUSet {
 	return s.FilterNot(func(cpu int) bool { return s2.Contains(cpu) })
 }
 
 // ToSlice returns a slice of integers that contains all elements from
 // this set.
+// 返回排好序的flag集合
 func (s CPUSet) ToSlice() []int {
 	result := []int{}
 	for cpu := range s.elems {
@@ -201,6 +214,7 @@ func (s CPUSet) ToSlice() []int {
 
 // ToSliceNoSort returns a slice of integers that contains all elements from
 // this set.
+// ToSlice的无排序版本
 func (s CPUSet) ToSliceNoSort() []int {
 	result := []int{}
 	for cpu := range s.elems {
@@ -211,6 +225,7 @@ func (s CPUSet) ToSliceNoSort() []int {
 
 // ToSliceInt64 returns an ordered slice of int64 that contains all elements from
 // this set
+// ToSlice的返回int64的版本
 func (s CPUSet) ToSliceInt64() []int64 {
 	var result []int64
 	for cpu := range s.elems {
@@ -222,6 +237,7 @@ func (s CPUSet) ToSliceInt64() []int64 {
 
 // ToSliceNoSortInt64 returns a slice of int64 that contains all elements from
 // this set.
+// ToSliceNoSort 的返回int64的版本
 func (s CPUSet) ToSliceNoSortInt64() []int64 {
 	var result []int64
 	for cpu := range s.elems {
@@ -234,6 +250,7 @@ func (s CPUSet) ToSliceNoSortInt64() []int64 {
 // in canonical linux CPU list format.
 //
 // See: http://man7.org/linux/man-pages/man7/cpuset.7.html#FORMATS
+// 设置成linux proc下面的格式
 func (s CPUSet) String() string {
 	if s.IsEmpty() {
 		return ""
@@ -288,6 +305,7 @@ func MustParse(s string) CPUSet {
 // Parse CPUSet constructs a new CPU set from a Linux CPU list formatted string.
 //
 // See: http://man7.org/linux/man-pages/man7/cpuset.7.html#FORMATS
+// 从linu格式set中Parse到CPUSet
 func Parse(s string) (CPUSet, error) {
 	b := NewBuilder()
 

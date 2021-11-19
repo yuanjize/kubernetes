@@ -162,11 +162,13 @@ func (s *bitMask) String() string {
 }
 
 // Count counts number of bits in mask set to one
+// 有多少位是1
 func (s *bitMask) Count() int {
 	return bits.OnesCount64(uint64(*s))
 }
 
 // Getbits returns each bit number with bits set to one
+// 都哪位设置为1了
 func (s *bitMask) GetBits() []int {
 	var bits []int
 	for i := uint64(0); i < 64; i++ {

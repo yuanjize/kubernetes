@@ -33,6 +33,7 @@ type Policy interface {
 // Merge a TopologyHints permutation to a single hint by performing a bitwise-AND
 // of their affinity masks. The hint shall be preferred if all hits in the permutation
 // are preferred.
+// 多个TopologyHint合成一个，就是对多个NUMANodeAffinity进行按位与操作，找到满足所有资源条件的
 func mergePermutation(numaNodes []int, permutation []TopologyHint) TopologyHint {
 	// Get the NUMANodeAffinity from each hint in the permutation and see if any
 	// of them encode unpreferred allocations.
@@ -58,7 +59,8 @@ func mergePermutation(numaNodes []int, permutation []TopologyHint) TopologyHint 
 	// preferred allocation was used to generate the affinity mask or not.
 	return TopologyHint{mergedAffinity, preferred}
 }
-
+// flat providersHints，不存在的就使用[]TopologyHint{{nil, true}
+// 返回值是二维数组，每一个数组代表一种资源的候选项
 func filterProvidersHints(providersHints []map[string][]TopologyHint) [][]TopologyHint {
 	// Loop through all hint providers and save an accumulated list of the
 	// hints returned by each hint provider. If no hints are provided, assume
@@ -66,6 +68,7 @@ func filterProvidersHints(providersHints []map[string][]TopologyHint) [][]Topolo
 	var allProviderHints [][]TopologyHint
 	for _, hints := range providersHints {
 		// If hints is nil, insert a single, preferred any-numa hint into allProviderHints.
+		// 空map
 		if len(hints) == 0 {
 			klog.InfoS("Hint Provider has no preference for NUMA affinity with any resource")
 			allProviderHints = append(allProviderHints, []TopologyHint{{nil, true}})
@@ -73,6 +76,7 @@ func filterProvidersHints(providersHints []map[string][]TopologyHint) [][]Topolo
 		}
 
 		// Otherwise, accumulate the hints for each resource type into allProviderHints.
+		// map value对应的空数组
 		for resource := range hints {
 			if hints[resource] == nil {
 				klog.InfoS("Hint Provider has no preference for NUMA affinity with resource", "resource", resource)
@@ -91,7 +95,7 @@ func filterProvidersHints(providersHints []map[string][]TopologyHint) [][]Topolo
 	}
 	return allProviderHints
 }
-
+// 选出最好的TopologyHint
 func mergeFilteredHints(numaNodes []int, filteredHints [][]TopologyHint) TopologyHint {
 	// Set the default affinity as an any-numa affinity containing the list
 	// of NUMA Nodes available on this machine.
@@ -107,6 +111,7 @@ func mergeFilteredHints(numaNodes []int, filteredHints [][]TopologyHint) Topolog
 		mergedHint := mergePermutation(numaNodes, permutation)
 		// Only consider mergedHints that result in a NUMANodeAffinity > 0 to
 		// replace the current bestHint.
+		// Count就是满足资源条件的个数
 		if mergedHint.NUMANodeAffinity.Count() == 0 {
 			return
 		}
@@ -128,6 +133,7 @@ func mergeFilteredHints(numaNodes []int, filteredHints [][]TopologyHint) Topolog
 		// If mergedHint and bestHint has the same preference, only consider
 		// mergedHints that have a narrower NUMANodeAffinity than the
 		// NUMANodeAffinity in the current bestHint.
+		// 需要的节点少的
 		if !mergedHint.NUMANodeAffinity.IsNarrowerThan(bestHint.NUMANodeAffinity) {
 			return
 		}
@@ -138,7 +144,7 @@ func mergeFilteredHints(numaNodes []int, filteredHints [][]TopologyHint) Topolog
 
 	return bestHint
 }
-
+// 把数组元素排列组合然后调用callback
 // Iterate over all permutations of hints in 'allProviderHints [][]TopologyHint'.
 //
 // This procedure is implemented as a recursive function over the set of hints
@@ -158,6 +164,7 @@ func mergeFilteredHints(numaNodes []int, filteredHints [][]TopologyHint) Topolog
 //                     providerHints[-1][z]
 //                 }
 //                 callback(permutation)
+// 每一行都代表一类资源的后选项，从每一行挑出来一个组成数组，然后调用callback，callback一般是按位与
 func iterateAllProviderTopologyHints(allProviderHints [][]TopologyHint, callback func([]TopologyHint)) {
 	// Internal helper function to accumulate the permutation before calling the callback.
 	var iterate func(i int, accum []TopologyHint)

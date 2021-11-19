@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 package topologymanager
-
+// 啥都不做
 type nonePolicy struct{}
 
 var _ Policy = &nonePolicy{}
