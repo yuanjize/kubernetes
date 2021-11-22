@@ -22,11 +22,13 @@ import (
 )
 
 // Policy interface for Topology Manager Pod Admit Result
+// 合并策略
 type Policy interface {
 	// Returns Policy Name
 	Name() string
 	// Returns a merged TopologyHint based on input from hint providers
 	// and a Pod Admit Handler Response based on hints and policy type
+	// 输入参数中数组的每一个元素代表一个provider返回的hint，map的每一项代表该provider能分配的该类型资源的排列组合
 	Merge(providersHints []map[string][]TopologyHint) (TopologyHint, bool)
 }
 
@@ -95,7 +97,7 @@ func filterProvidersHints(providersHints []map[string][]TopologyHint) [][]Topolo
 	}
 	return allProviderHints
 }
-// 选出最好的TopologyHint
+// 排列组合选出最好的TopologyHint
 func mergeFilteredHints(numaNodes []int, filteredHints [][]TopologyHint) TopologyHint {
 	// Set the default affinity as an any-numa affinity containing the list
 	// of NUMA Nodes available on this machine.

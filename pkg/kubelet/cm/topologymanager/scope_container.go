@@ -42,7 +42,7 @@ func NewContainerScope(policy Policy) Scope {
 		},
 	}
 }
-// 分配资源
+// 获取provider可以分配的资源，然后合并，最终分配资源
 func (s *containerScope) Admit(pod *v1.Pod) lifecycle.PodAdmitResult {
 	// Exception - Policy : none
 	if s.policy.Name() == PolicyNone {

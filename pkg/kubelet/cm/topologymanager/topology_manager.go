@@ -74,6 +74,7 @@ type manager struct {
 // HintProvider is an interface for components that want to collaborate to
 // achieve globally optimal concrete resource alignment with respect to
 // NUMA locality.
+// 负责提供资源
 type HintProvider interface {
 	// GetTopologyHints returns a map of resource names to a list of possible
 	// concrete resource allocations in terms of NUMA locality hints. Each hint

@@ -34,7 +34,7 @@ func NewBestEffortPolicy(numaNodes []int) Policy {
 func (p *bestEffortPolicy) Name() string {
 	return PolicyBestEffort
 }
-
+// 是否允许使用该hint
 func (p *bestEffortPolicy) canAdmitPodResult(hint *TopologyHint) bool {
 	return true
 }

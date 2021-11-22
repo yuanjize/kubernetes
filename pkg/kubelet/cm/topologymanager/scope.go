@@ -49,7 +49,7 @@ type Scope interface {
 	// Store is the interface for storing pod topology hints
 	Store
 }
-
+// scope、具体实现的一些工具函数
 type scope struct {
 	mutex sync.Mutex
 	name  string
