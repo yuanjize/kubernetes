@@ -95,9 +95,9 @@ type staticPolicy struct {
 	// cpu socket topology
 	topology *topology.CPUTopology
 	// set of CPUs that is not available for exclusive assignment
-	reserved cpuset.CPUSet
+	reserved cpuset.CPUSet  // 非排他cpu集合
 	// topology manager reference to get container Topology affinity
-	affinity topologymanager.Store
+	affinity topologymanager.Store  // 获得计算好的hint
 	// set of CPUs to reuse across allocations in a pod
 	cpusToReuse map[string]cpuset.CPUSet
 	// options allow to fine-tune the behaviour of the policy
@@ -110,6 +110,7 @@ var _ Policy = &staticPolicy{}
 // NewStaticPolicy returns a CPU manager policy that does not change CPU
 // assignments for exclusively pinned guaranteed containers after the main
 // container process starts.
+// numReservedCPUs 需要的cpu数量
 func NewStaticPolicy(topology *topology.CPUTopology, numReservedCPUs int, reservedCPUs cpuset.CPUSet, affinity topologymanager.Store, cpuPolicyOptions map[string]string) (Policy, error) {
 	opts, err := NewStaticPolicyOptions(cpuPolicyOptions)
 	if err != nil {
@@ -118,17 +119,17 @@ func NewStaticPolicy(topology *topology.CPUTopology, numReservedCPUs int, reserv
 
 	klog.InfoS("Static policy created with configuration", "options", opts)
 
-	allCPUs := topology.CPUDetails.CPUs()
+	allCPUs := topology.CPUDetails.CPUs()  //所有的cpu
 	var reserved cpuset.CPUSet
 	if reservedCPUs.Size() > 0 {
-		reserved = reservedCPUs
+		reserved = reservedCPUs   // 非排他的cpu集合
 	} else {
 		// takeByTopology allocates CPUs associated with low-numbered cores from
 		// allCPUs.
 		//
 		// For example: Given a system with 8 CPUs available and HT enabled,
 		// if numReservedCPUs=2, then reserved={0,4}
-		reserved, _ = takeByTopology(topology, allCPUs, numReservedCPUs)
+		reserved, _ = takeByTopology(topology, allCPUs, numReservedCPUs)  // 从所有的cpu里面找到numReservedCPUs个非排他的cpu
 	}
 
 	if reserved.Size() != numReservedCPUs {
@@ -158,7 +159,7 @@ func (p *staticPolicy) Start(s state.State) error {
 	}
 	return nil
 }
-
+// 一些定时检查操作，可以不看
 func (p *staticPolicy) validateState(s state.State) error {
 	tmpAssignments := s.GetCPUAssignments()
 	tmpDefaultCPUset := s.GetDefaultCPUSet()
@@ -178,12 +179,14 @@ func (p *staticPolicy) validateState(s state.State) error {
 	// 1. Check if the reserved cpuset is not part of default cpuset because:
 	// - kube/system reserved have changed (increased) - may lead to some containers not being able to start
 	// - user tampered with file
+	//所有的reserved必须是tmpDefaultCPUset的子集
 	if !p.reserved.Intersection(tmpDefaultCPUset).Equals(p.reserved) {
 		return fmt.Errorf("not all reserved cpus: \"%s\" are present in defaultCpuSet: \"%s\"",
 			p.reserved.String(), tmpDefaultCPUset.String())
 	}
 
 	// 2. Check if state for static policy is consistent
+	// default cpuset和Assignments cpuset不应该有交集
 	for pod := range tmpAssignments {
 		for container, cset := range tmpAssignments[pod] {
 			// None of the cpu in DEFAULT cset should be in s.assignments
@@ -201,6 +204,7 @@ func (p *staticPolicy) validateState(s state.State) error {
 	// assign non-existent CPUs to containers. Validate that the
 	// topology that was received during CPU manager startup matches with
 	// the set of CPUs stored in the state.
+	// 检查是否当前所有cpu都在线
 	totalKnownCPUs := tmpDefaultCPUset.Clone()
 	tmpCPUSets := []cpuset.CPUSet{}
 	for pod := range tmpAssignments {
@@ -218,6 +222,7 @@ func (p *staticPolicy) validateState(s state.State) error {
 }
 
 // GetAllocatableCPUs returns the set of unassigned CPUs minus the reserved set.
+// AllocatableCPUs= 未分配的cpu-reservedcpu，就是剩余可以分配的排他cpu
 func (p *staticPolicy) GetAllocatableCPUs(s state.State) cpuset.CPUSet {
 	return s.GetDefaultCPUSet().Difference(p.reserved)
 }
@@ -250,7 +255,7 @@ func (p *staticPolicy) Allocate(s state.State, pod *v1.Pod, container *v1.Contai
 	if numCPUs := p.guaranteedCPUs(pod, container); numCPUs != 0 {
 		klog.InfoS("Static policy: Allocate", "pod", klog.KObj(pod), "containerName", container.Name)
 		// container belongs in an exclusively allocated pool
-
+        //申请的cou数目必须是每个core的cpu数的整数倍
 		if p.options.FullPhysicalCPUsOnly && ((numCPUs % p.topology.CPUsPerCore()) != 0) {
 			// Since CPU Manager has been enabled requesting strict SMT alignment, it means a guaranteed pod can only be admitted
 			// if the CPU requested is a multiple of the number of virtual cpus per physical cores.
@@ -266,6 +271,7 @@ func (p *staticPolicy) Allocate(s state.State, pod *v1.Pod, container *v1.Contai
 				CpusPerCore:   p.topology.CPUsPerCore(),
 			}
 		}
+		// 已经分配过了
 		if cpuset, ok := s.GetCPUSet(string(pod.UID), container.Name); ok {
 			p.updateCPUsToReuse(pod, container, cpuset)
 			klog.InfoS("Static policy: container already present in state, skipping", "pod", klog.KObj(pod), "containerName", container.Name)
@@ -273,10 +279,12 @@ func (p *staticPolicy) Allocate(s state.State, pod *v1.Pod, container *v1.Contai
 		}
 
 		// Call Topology Manager to get the aligned socket affinity across all hint providers.
+		// 获取计算好的hint
 		hint := p.affinity.GetAffinity(string(pod.UID), container.Name)
 		klog.InfoS("Topology Affinity", "pod", klog.KObj(pod), "containerName", container.Name, "affinity", hint)
 
 		// Allocate CPUs according to the NUMA affinity contained in the hint.
+		// 根据hint选出要是用的cpu
 		cpuset, err := p.allocateCPUs(s, numCPUs, hint.NUMANodeAffinity, p.cpusToReuse[string(pod.UID)])
 		if err != nil {
 			klog.ErrorS(err, "Unable to allocate CPUs", "pod", klog.KObj(pod), "containerName", container.Name, "numCPUs", numCPUs)
@@ -289,7 +297,7 @@ func (p *staticPolicy) Allocate(s state.State, pod *v1.Pod, container *v1.Contai
 	// container belongs in the shared pool (nothing to do; use default cpuset)
 	return nil
 }
-
+// cpu资源回收
 func (p *staticPolicy) RemoveContainer(s state.State, podUID string, containerName string) error {
 	klog.InfoS("Static policy: RemoveContainer", "podUID", podUID, "containerName", containerName)
 	if toRelease, ok := s.GetCPUSet(podUID, containerName); ok {
@@ -299,16 +307,16 @@ func (p *staticPolicy) RemoveContainer(s state.State, podUID string, containerNa
 	}
 	return nil
 }
-
+// 从numaAffinity指定的node上陪陪cup，如果不够就从别的地方找
 func (p *staticPolicy) allocateCPUs(s state.State, numCPUs int, numaAffinity bitmask.BitMask, reusableCPUs cpuset.CPUSet) (cpuset.CPUSet, error) {
 	klog.InfoS("AllocateCPUs", "numCPUs", numCPUs, "socket", numaAffinity)
-
+    // 可分配的cpu
 	allocatableCPUs := p.GetAllocatableCPUs(s).Union(reusableCPUs)
 
 	// If there are aligned CPUs in numaAffinity, attempt to take those first.
 	result := cpuset.NewCPUSet()
 	if numaAffinity != nil {
-		alignedCPUs := cpuset.NewCPUSet()
+		alignedCPUs := cpuset.NewCPUSet() // 用来装node上可用的cpu
 		for _, numaNodeID := range numaAffinity.GetBits() {
 			alignedCPUs = alignedCPUs.Union(allocatableCPUs.Intersection(p.topology.CPUDetails.CPUsInNUMANodes(numaNodeID)))
 		}
@@ -317,16 +325,17 @@ func (p *staticPolicy) allocateCPUs(s state.State, numCPUs int, numaAffinity bit
 		if numCPUs < numAlignedToAlloc {
 			numAlignedToAlloc = numCPUs
 		}
-
+         // 从alignedCPUs中拿到该数量的cpu
 		alignedCPUs, err := takeByTopology(p.topology, alignedCPUs, numAlignedToAlloc)
 		if err != nil {
 			return cpuset.NewCPUSet(), err
 		}
-
+        // 放到结果集中
 		result = result.Union(alignedCPUs)
 	}
 
 	// Get any remaining CPUs from what's leftover after attempting to grab aligned ones.
+	// 如果不够再弄其他cpu找
 	remainingCPUs, err := takeByTopology(p.topology, allocatableCPUs.Difference(result), numCPUs-result.Size())
 	if err != nil {
 		return cpuset.NewCPUSet(), err
@@ -340,12 +349,13 @@ func (p *staticPolicy) allocateCPUs(s state.State, numCPUs int, numaAffinity bit
 	return result, nil
 }
 
+// 判断是否是Guaranteed，并且请求的cpu数目是整数
 func (p *staticPolicy) guaranteedCPUs(pod *v1.Pod, container *v1.Container) int {
 	if v1qos.GetPodQOS(pod) != v1.PodQOSGuaranteed {
 		return 0
 	}
 	cpuQuantity := container.Resources.Requests[v1.ResourceCPU]
-	if cpuQuantity.Value()*1000 != cpuQuantity.MilliValue() {
+	if cpuQuantity.Value()*1000 != cpuQuantity.MilliValue() { // 不是整数
 		return 0
 	}
 	// Safe downcast to do for all systems with < 2.1 billion CPUs.
@@ -354,6 +364,7 @@ func (p *staticPolicy) guaranteedCPUs(pod *v1.Pod, container *v1.Container) int 
 	return int(cpuQuantity.Value())
 }
 
+// 取出来init容器和普通容器中需要的guaranteed cpu最多的cpu（整个pod的保证cpu）
 func (p *staticPolicy) podGuaranteedCPUs(pod *v1.Pod) int {
 	// The maximum of requested CPUs by init containers.
 	requestedByInitContainers := 0
@@ -383,6 +394,7 @@ func (p *staticPolicy) podGuaranteedCPUs(pod *v1.Pod) int {
 
 func (p *staticPolicy) GetTopologyHints(s state.State, pod *v1.Pod, container *v1.Container) map[string][]topologymanager.TopologyHint {
 	// Get a count of how many guaranteed CPUs have been requested.
+	// 需要的cpu资源
 	requested := p.guaranteedCPUs(pod, container)
 
 	// Number of required CPUs is not an integer or a container is not part of the Guaranteed QoS class.
@@ -406,6 +418,7 @@ func (p *staticPolicy) GetTopologyHints(s state.State, pod *v1.Pod, container *v
 				string(v1.ResourceCPU): {},
 			}
 		}
+		// 已经分配了这个数目
 		klog.InfoS("Regenerating TopologyHints for CPUs already allocated", "pod", klog.KObj(pod), "containerName", container.Name)
 		return map[string][]topologymanager.TopologyHint{
 			string(v1.ResourceCPU): p.generateCPUTopologyHints(allocated, cpuset.CPUSet{}, requested),
@@ -460,6 +473,7 @@ func (p *staticPolicy) GetPodTopologyHints(s state.State, pod *v1.Pod) map[strin
 			assignedCPUs = assignedCPUs.Union(allocated)
 		}
 	}
+	// 经分配了那么只能在这个几个cpu里面选
 	if assignedCPUs.Size() == requested {
 		klog.InfoS("Regenerating TopologyHints for CPUs already allocated", "pod", klog.KObj(pod))
 		return map[string][]topologymanager.TopologyHint{
@@ -492,6 +506,7 @@ func (p *staticPolicy) GetPodTopologyHints(s state.State, pod *v1.Pod) map[strin
 // It follows the convention of marking all hints that have the same number of
 // bits set as the narrowest matching NUMANodeAffinity with 'Preferred: true', and
 // marking all others with 'Preferred: false'.
+// 计算出来所有可能的hint
 func (p *staticPolicy) generateCPUTopologyHints(availableCPUs cpuset.CPUSet, reusableCPUs cpuset.CPUSet, request int) []topologymanager.TopologyHint {
 	// Initialize minAffinitySize to include all NUMA Nodes.
 	minAffinitySize := p.topology.CPUDetails.NUMANodes().Size()
@@ -501,6 +516,7 @@ func (p *staticPolicy) generateCPUTopologyHints(availableCPUs cpuset.CPUSet, reu
 	bitmask.IterateBitMasks(p.topology.CPUDetails.NUMANodes().ToSlice(), func(mask bitmask.BitMask) {
 		// First, update minAffinitySize for the current request size.
 		cpusInMask := p.topology.CPUDetails.CPUsInNUMANodes(mask.GetBits()...).Size()
+		// 能满足cpu需求，并且node使用最少
 		if cpusInMask >= request && mask.Count() < minAffinitySize {
 			minAffinitySize = mask.Count()
 		}
@@ -510,6 +526,7 @@ func (p *staticPolicy) generateCPUTopologyHints(availableCPUs cpuset.CPUSet, reu
 		numMatching := 0
 		for _, c := range reusableCPUs.ToSlice() {
 			// Disregard this mask if its NUMANode isn't part of it.
+			// 不能复用目前现有的cpu资源
 			if !mask.IsSet(p.topology.CPUDetails[c].NUMANodeID) {
 				return
 			}
@@ -518,6 +535,7 @@ func (p *staticPolicy) generateCPUTopologyHints(availableCPUs cpuset.CPUSet, reu
 
 		// Finally, check to see if enough available CPUs remain on the current
 		// NUMA node combination to satisfy the CPU request.
+		// 可用的cpu是否在该node上
 		for _, c := range availableCPUs.ToSlice() {
 			if mask.IsSet(p.topology.CPUDetails[c].NUMANodeID) {
 				numMatching++
@@ -525,6 +543,7 @@ func (p *staticPolicy) generateCPUTopologyHints(availableCPUs cpuset.CPUSet, reu
 		}
 
 		// If they don't, then move onto the next combination.
+		// 不满足进行下步计算
 		if numMatching < request {
 			return
 		}
@@ -532,6 +551,7 @@ func (p *staticPolicy) generateCPUTopologyHints(availableCPUs cpuset.CPUSet, reu
 		// Otherwise, create a new hint from the numa node bitmask and add it to the
 		// list of hints.  We set all hint preferences to 'false' on the first
 		// pass through.
+		// 满足，添加到hints中
 		hints = append(hints, topologymanager.TopologyHint{
 			NUMANodeAffinity: mask,
 			Preferred:        false,
@@ -542,6 +562,7 @@ func (p *staticPolicy) generateCPUTopologyHints(availableCPUs cpuset.CPUSet, reu
 	// counting the number of bits sets in the affinity mask and comparing it
 	// to the minAffinitySize. Only those with an equal number of bits set (and
 	// with a minimal set of numa nodes) will be considered preferred.
+	// 把最使用node1最小的hint标记为Preferred
 	for i := range hints {
 		if hints[i].NUMANodeAffinity.Count() == minAffinitySize {
 			hints[i].Preferred = true

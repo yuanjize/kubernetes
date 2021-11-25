@@ -55,7 +55,7 @@ type scope struct {
 	name  string
 	// Mapping of a Pods mapping of Containers and their TopologyHints
 	// Indexed by PodUID to ContainerName
-	podTopologyHints podTopologyHints
+	podTopologyHints podTopologyHints  // 缓存计算好的hint
 	// The list of components registered with the Manager
 	hintProviders []HintProvider
 	// Topology Manager Policy

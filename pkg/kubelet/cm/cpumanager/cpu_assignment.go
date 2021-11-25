@@ -191,7 +191,7 @@ func (a *cpuAccumulator) isFailed() bool {
 	return a.numCPUsNeeded > a.details.CPUs().Size()
 }
 
-// 尽力高效率的分配cpu(thread)
+// 尽力高效率的分配cpu(thread)，真正干活儿的
 func takeByTopology(topo *topology.CPUTopology, availableCPUs cpuset.CPUSet, numCPUs int) (cpuset.CPUSet, error) {
 	acc := newCPUAccumulator(topo, availableCPUs, numCPUs)
 	// 已经满足cpu分配，直接返回

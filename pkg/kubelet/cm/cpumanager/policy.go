@@ -24,6 +24,7 @@ import (
 )
 
 // Policy implements logic for pod container to CPU assignment.
+// 实现cpu分配的逻辑。也主要提供对HintProvider的实现
 type Policy interface {
 	Name() string
 	Start(s state.State) error

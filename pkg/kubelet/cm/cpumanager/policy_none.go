@@ -25,7 +25,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 	"k8s.io/kubernetes/pkg/kubelet/cm/topologymanager"
 )
-
+// policy 接口的实现，都是空实现
 type nonePolicy struct{}
 
 var _ Policy = &nonePolicy{}

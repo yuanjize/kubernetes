@@ -41,6 +41,7 @@ import (
 // ActivePodsFunc is a function that returns a list of pods to reconcile.
 type ActivePodsFunc func() []*v1.Pod
 
+// 用来更新容器资源
 type runtimeService interface {
 	UpdateContainerResources(id string, resources *runtimeapi.LinuxContainerResources) error
 }
@@ -106,15 +107,15 @@ type manager struct {
 
 	// containerRuntime is the container runtime service interface needed
 	// to make UpdateContainerResources() calls against the containers.
-	containerRuntime runtimeService
+	containerRuntime runtimeService // 告诉cri更新容器使用的资源
 
 	// activePods is a method for listing active pods on the node
 	// so all the containers can be updated in the reconciliation loop.
-	activePods ActivePodsFunc
+	activePods ActivePodsFunc // ；列出当前节点活跃的cpu以便在reconciliation中更新容器
 
 	// podStatusProvider provides a method for obtaining pod statuses
 	// and the containerID of their containers
-	podStatusProvider status.PodStatusProvider
+	podStatusProvider status.PodStatusProvider // 用来根据id获取pod的状态
 
 	// containerMap provides a mapping from (pod, container) -> containerID
 	// for all containers a pod
@@ -129,13 +130,13 @@ type manager struct {
 	sourcesReady config.SourcesReady
 
 	// stateFileDirectory holds the directory where the state file for checkpoints is held.
-	stateFileDirectory string
+	stateFileDirectory string // checkpoint存储目录
 
 	// allocatableCPUs is the set of online CPUs as reported by the system
-	allocatableCPUs cpuset.CPUSet
+	allocatableCPUs cpuset.CPUSet// 可分配的CPU数目
 
 	// pendingAdmissionPod contain the pod during the admission phase
-	pendingAdmissionPod *v1.Pod
+	pendingAdmissionPod *v1.Pod  // 正在准入阶段的pod
 }
 
 var _ Manager = &manager{}
@@ -241,15 +242,16 @@ func (m *manager) Start(activePods ActivePodsFunc, sourcesReady config.SourcesRe
 func (m *manager) Allocate(p *v1.Pod, c *v1.Container) error {
 	// The pod is during the admission phase. We need to save the pod to avoid it
 	// being cleaned before the admission ended
-	m.setPodPendingAdmission(p)
+	m.setPodPendingAdmission(p) // pod标记为正在准入阶段
 
 	// Garbage collect any stranded resources before allocating CPUs.
-	m.removeStaleState()
+	m.removeStaleState() // 回收掉死pod的cpu资源
 
 	m.Lock()
 	defer m.Unlock()
 
 	// Call down into the policy to assign this container CPUs if required.
+	// 用policy来分配cpu
 	err := m.policy.Allocate(m.state, p, c)
 	if err != nil {
 		klog.ErrorS(err, "Allocate error")
@@ -295,7 +297,7 @@ func (m *manager) policyRemoveContainerByID(containerID string) error {
 
 	return err
 }
-
+// 移除相关信息
 func (m *manager) policyRemoveContainerByRef(podUID string, containerName string) error {
 	err := m.policy.RemoveContainer(m.state, podUID, containerName)
 	if err == nil {
@@ -310,6 +312,7 @@ func (m *manager) State() state.Reader {
 	return m.state
 }
 
+// policy的wrapper
 func (m *manager) GetTopologyHints(pod *v1.Pod, container *v1.Container) map[string][]topologymanager.TopologyHint {
 	// The pod is during the admission phase. We need to save the pod to avoid it
 	// being cleaned before the admission ended
@@ -320,6 +323,7 @@ func (m *manager) GetTopologyHints(pod *v1.Pod, container *v1.Container) map[str
 	return m.policy.GetTopologyHints(m.state, pod, container)
 }
 
+// policy的wrapper
 func (m *manager) GetPodTopologyHints(pod *v1.Pod) map[string][]topologymanager.TopologyHint {
 	// The pod is during the admission phase. We need to save the pod to avoid it
 	// being cleaned before the admission ended
@@ -339,7 +343,7 @@ type reconciledContainer struct {
 	containerName string
 	containerID   string
 }
-
+// 首先找到当前的活跃pod，然后找到当钱已经分配的所有的cpu，把非活跃的pod的cpu释放
 func (m *manager) removeStaleState() {
 	// Only once all sources are ready do we attempt to remove any stale state.
 	// This ensures that the call to `m.activePods()` below will succeed with
@@ -385,7 +389,7 @@ func (m *manager) removeStaleState() {
 		}
 	}
 }
-
+// 从state中获取资源信息，更新lastUpdateState，更新容器使用的资源（updateContainerCPUSet）
 func (m *manager) reconcileState() (success []reconciledContainer, failure []reconciledContainer) {
 	success = []reconciledContainer{}
 	failure = []reconciledContainer{}
@@ -468,7 +472,7 @@ func (m *manager) reconcileState() (success []reconciledContainer, failure []rec
 	}
 	return success, failure
 }
-
+// 根据容器名字在pod的status中获取容器id
 func findContainerIDByName(status *v1.PodStatus, name string) (string, error) {
 	allStatuses := status.InitContainerStatuses
 	allStatuses = append(allStatuses, status.ContainerStatuses...)
@@ -484,7 +488,7 @@ func findContainerIDByName(status *v1.PodStatus, name string) (string, error) {
 	}
 	return "", fmt.Errorf("unable to find ID for container with name %v in pod status (it may not be running)", name)
 }
-
+// 从podstatus中获取容器的status
 func findContainerStatusByName(status *v1.PodStatus, name string) (*v1.ContainerStatus, error) {
 	for _, containerStatus := range append(status.InitContainerStatuses, status.ContainerStatuses...) {
 		if containerStatus.Name == name {
@@ -493,7 +497,7 @@ func findContainerStatusByName(status *v1.PodStatus, name string) (*v1.Container
 	}
 	return nil, fmt.Errorf("unable to find status for container with name %v in pod status (it may not be running)", name)
 }
-
+// 更新容器使用的cpuset
 func (m *manager) updateContainerCPUSet(containerID string, cpus cpuset.CPUSet) error {
 	// TODO: Consider adding a `ResourceConfigForContainer` helper in
 	// helpers_linux.go similar to what exists for pods.
@@ -505,11 +509,12 @@ func (m *manager) updateContainerCPUSet(containerID string, cpus cpuset.CPUSet) 
 			CpusetCpus: cpus.String(),
 		})
 }
-
+// 获取当前cpuset
 func (m *manager) GetCPUs(podUID, containerName string) cpuset.CPUSet {
 	return m.state.GetCPUSetOrDefault(podUID, containerName)
 }
 
+// pod标记为正在准入阶段
 func (m *manager) setPodPendingAdmission(pod *v1.Pod) {
 	m.Lock()
 	defer m.Unlock()

@@ -46,7 +46,7 @@ type Reader interface {
 
 type writer interface {
 	SetCPUSet(podUID string, containerName string, cpuset cpuset.CPUSet)
-	SetDefaultCPUSet(cpuset cpuset.CPUSet)
+	SetDefaultCPUSet(cpuset cpuset.CPUSet)  // default就是shared cpu
 	SetCPUAssignments(ContainerCPUAssignments)
 	Delete(podUID string, containerName string)
 	ClearState()

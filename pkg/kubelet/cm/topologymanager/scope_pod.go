@@ -42,7 +42,7 @@ func NewPodScope(policy Policy) Scope {
 		},
 	}
 }
-
+// 计算并分配资源
 func (s *podScope) Admit(pod *v1.Pod) lifecycle.PodAdmitResult {
 	// Exception - Policy : none
 	if s.policy.Name() == PolicyNone {
@@ -78,7 +78,7 @@ func (s *podScope) accumulateProvidersHints(pod *v1.Pod) []map[string][]Topology
 	}
 	return providersHints
 }
-
+// 算出来最好的Hint
 func (s *podScope) calculateAffinity(pod *v1.Pod) (TopologyHint, bool) {
 	providersHints := s.accumulateProvidersHints(pod)
 	bestHint, admit := s.policy.Merge(providersHints)
