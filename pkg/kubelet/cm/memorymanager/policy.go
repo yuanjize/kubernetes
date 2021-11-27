@@ -26,6 +26,7 @@ import (
 type policyType string
 
 // Policy implements logic for pod container to a memory assignment.
+// 和cpu的policy一样，主要干活的就是这个
 type Policy interface {
 	Name() string
 	Start(s state.State) error

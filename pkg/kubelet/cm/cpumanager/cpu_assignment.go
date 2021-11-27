@@ -25,6 +25,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/topology"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 )
+// 一个工具用来分配指定数量的cpu
 // 分配cpu的时候尽可能近的分配，比如都在一个socket/core上，这样运行效率比较高
 type cpuAccumulator struct {
 	topo          *topology.CPUTopology // 节点cpu信息

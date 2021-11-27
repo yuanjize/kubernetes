@@ -22,7 +22,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/checkpointmanager"
 	"k8s.io/kubernetes/pkg/kubelet/checkpointmanager/checksum"
 )
-
+// 实现了checkpoint接口，其实就是个结构体，实现了序列化和反序列化方法
 var _ checkpointmanager.Checkpoint = &MemoryManagerCheckpoint{}
 
 // MemoryManagerCheckpoint struct is used to store memory/pod assignments in a checkpoint

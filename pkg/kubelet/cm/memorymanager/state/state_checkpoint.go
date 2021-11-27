@@ -27,7 +27,7 @@ import (
 )
 
 var _ State = &stateCheckpoint{}
-
+// 实现了store接口也提供了保存和恢复checkpoint的功能
 type stateCheckpoint struct {
 	sync.RWMutex
 	cache             State

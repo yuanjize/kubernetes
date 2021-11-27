@@ -21,7 +21,7 @@ import (
 
 	"k8s.io/klog/v2"
 )
-
+// 实现state接口，用来追踪内存状态
 type stateMemory struct {
 	sync.RWMutex
 	assignments  ContainerMemoryAssignments

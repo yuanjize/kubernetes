@@ -43,8 +43,10 @@ type staticPolicy struct {
 	// machineInfo contains machine memory related information
 	machineInfo *cadvisorapi.MachineInfo
 	// reserved contains memory that reserved for kube
+	// 保留的内存
 	systemReserved systemReservedMemory
 	// topology manager reference to get container Topology affinity
+	// 获取计算好的hint
 	affinity topologymanager.Store
 	// initContainersReusableMemory contains the memory allocated for init containers that can be reused
 	initContainersReusableMemory reusableMemory
@@ -54,7 +56,7 @@ var _ Policy = &staticPolicy{}
 
 // NewPolicyStatic returns new static policy instance
 func NewPolicyStatic(machineInfo *cadvisorapi.MachineInfo, reserved systemReservedMemory, affinity topologymanager.Store) (Policy, error) {
-	var totalSystemReserved uint64
+	var totalSystemReserved uint64 // 要保留的内存资源
 	for _, node := range reserved {
 		if _, ok := node[v1.ResourceMemory]; !ok {
 			continue
@@ -80,7 +82,7 @@ func (p *staticPolicy) Name() string {
 }
 
 func (p *staticPolicy) Start(s state.State) error {
-	if err := p.validateState(s); err != nil {
+	if err := p.validateState(s); err != nil {   // restore状态
 		klog.ErrorS(err, "Invalid state, please drain node and remove policy state file")
 		return err
 	}
@@ -96,6 +98,7 @@ func (p *staticPolicy) Allocate(s state.State, pod *v1.Pod, container *v1.Contai
 
 	podUID := string(pod.UID)
 	klog.InfoS("Allocate", "pod", klog.KObj(pod), "containerName", container.Name)
+	// 如果已经分配了内存，那么更新可复用的资源
 	if blocks := s.GetMemoryBlocks(podUID, container.Name); blocks != nil {
 		p.updatePodReusableMemory(pod, container, blocks)
 
@@ -104,6 +107,7 @@ func (p *staticPolicy) Allocate(s state.State, pod *v1.Pod, container *v1.Contai
 	}
 
 	// Call Topology Manager to get the aligned affinity across all hint providers.
+	// 获取计算好的hint
 	hint := p.affinity.GetAffinity(podUID, container.Name)
 	klog.InfoS("Got topology affinity", "pod", klog.KObj(pod), "podUID", pod.UID, "containerName", container.Name, "hint", hint)
 
@@ -209,7 +213,7 @@ func (p *staticPolicy) updateMachineState(machineState state.NUMANodeMap, numaAf
 		nodeResourceMemoryState.Free = 0
 	}
 }
-
+// 返回block对应的 reuseable 资源
 func (p *staticPolicy) getPodReusableMemory(pod *v1.Pod, numaAffinity bitmask.BitMask, resourceName v1.ResourceName) uint64 {
 	podReusableMemory, ok := p.initContainersReusableMemory[string(pod.UID)]
 	if !ok {
@@ -536,23 +540,25 @@ func areGroupsEqual(group1, group2 []int) bool {
 	return true
 }
 
+// 根据已分配的内存，校验machineState
 func (p *staticPolicy) validateState(s state.State) error {
 	machineState := s.GetMachineState()
 	memoryAssignments := s.GetMemoryAssignments()
 
 	if len(machineState) == 0 {
+		// checkpoint没有数据，初次启动
 		// Machine state cannot be empty when assignments exist
 		if len(memoryAssignments) != 0 {
 			return fmt.Errorf("[memorymanager] machine state can not be empty when it has memory assignments")
 		}
-
-		defaultMachineState := p.getDefaultMachineState()
+		defaultMachineState := p.getDefaultMachineState() // 获取numa node的内存状态
 		s.SetMachineState(defaultMachineState)
 
 		return nil
 	}
 
 	// calculate all memory assigned to containers
+	// 根据已分配的内存数据，修改MachineState
 	expectedMachineState := p.getDefaultMachineState()
 	for pod, container := range memoryAssignments {
 		for containerName, blocks := range container {
@@ -582,6 +588,7 @@ func (p *staticPolicy) validateState(s state.State) error {
 					}
 
 					// the node has enough memory to satisfy the request
+					// 有足够的剩余内存，修改内存剩余状态
 					if memoryState.Free >= requestedSize {
 						memoryState.Reserved += requestedSize
 						memoryState.Free -= requestedSize
@@ -590,6 +597,7 @@ func (p *staticPolicy) validateState(s state.State) error {
 					}
 
 					// the node does not have enough memory, use the node remaining memory and move to the next node
+					// 尽量分配，分配不够的使用下一个node去分配
 					requestedSize -= memoryState.Free
 					memoryState.Reserved += memoryState.Free
 					memoryState.Free = 0
@@ -608,7 +616,7 @@ func (p *staticPolicy) validateState(s state.State) error {
 
 	return nil
 }
-
+// 验证两个NUMANodeMap是否相等
 func areMachineStatesEqual(ms1, ms2 state.NUMANodeMap) bool {
 	if len(ms1) != len(ms2) {
 		klog.ErrorS(nil, "Node states are different", "lengthNode1", len(ms1), "lengthNode2", len(ms2))
@@ -653,6 +661,7 @@ func areMachineStatesEqual(ms1, ms2 state.NUMANodeMap) bool {
 	return true
 }
 
+// 填充numa node的内存状态
 func (p *staticPolicy) getDefaultMachineState() state.NUMANodeMap {
 	defaultMachineState := state.NUMANodeMap{}
 	nodeHugepages := map[int]uint64{}
@@ -664,12 +673,14 @@ func (p *staticPolicy) getDefaultMachineState() state.NUMANodeMap {
 		}
 
 		// fill memory table with huge pages values
+		// 初始化hugepage相关的内存值
 		for _, hugepage := range node.HugePages {
 			hugepageQuantity := resource.NewQuantity(int64(hugepage.PageSize)*1024, resource.BinarySI)
 			resourceName := corehelper.HugePageResourceName(*hugepageQuantity)
+			// 获取hugepage Reserved资源
 			systemReserved := p.getResourceSystemReserved(node.Id, resourceName)
-			totalHugepagesSize := hugepage.NumPages * hugepage.PageSize * 1024
-			allocatable := totalHugepagesSize - systemReserved
+			totalHugepagesSize := hugepage.NumPages * hugepage.PageSize * 1024 // 总的hugepage大小
+			allocatable := totalHugepagesSize - systemReserved                 //可分配的hugepage内存大小
 			defaultMachineState[node.Id].MemoryMap[resourceName] = &state.MemoryTable{
 				Allocatable:    allocatable,
 				Free:           allocatable,
@@ -680,15 +691,17 @@ func (p *staticPolicy) getDefaultMachineState() state.NUMANodeMap {
 			if _, ok := nodeHugepages[node.Id]; !ok {
 				nodeHugepages[node.Id] = 0
 			}
+			// 当前numa node的总的hugepage的大小
 			nodeHugepages[node.Id] += totalHugepagesSize
 		}
 
 		// fill memory table with regular memory values
-		systemReserved := p.getResourceSystemReserved(node.Id, v1.ResourceMemory)
+		// 普通内存相关信息
+		systemReserved := p.getResourceSystemReserved(node.Id, v1.ResourceMemory) // 保留的普通内存
 
 		allocatable := node.Memory - systemReserved
 		// remove memory allocated by hugepages
-		if allocatedByHugepages, ok := nodeHugepages[node.Id]; ok {
+		if allocatedByHugepages, ok := nodeHugepages[node.Id]; ok { // 看起来node.Memory包含了hugepage内存
 			allocatable -= allocatedByHugepages
 		}
 		defaultMachineState[node.Id].MemoryMap[v1.ResourceMemory] = &state.MemoryTable{
@@ -702,6 +715,7 @@ func (p *staticPolicy) getDefaultMachineState() state.NUMANodeMap {
 	return defaultMachineState
 }
 
+// 获取指定node的指定类型的资源
 func (p *staticPolicy) getResourceSystemReserved(nodeID int, resourceName v1.ResourceName) uint64 {
 	var systemReserved uint64
 	if nodeSystemReserved, ok := p.systemReserved[nodeID]; ok {
@@ -830,7 +844,7 @@ func (p *staticPolicy) GetAllocatableMemory(s state.State) []state.Block {
 	}
 	return allocatableMemory
 }
-
+// 更新可复用的资源
 func (p *staticPolicy) updatePodReusableMemory(pod *v1.Pod, container *v1.Container, memoryBlocks []state.Block) {
 	podUID := string(pod.UID)
 
@@ -922,7 +936,7 @@ func (p *staticPolicy) updateInitContainersMemoryBlocks(s state.State, pod *v1.P
 		}
 	}
 }
-
+// container是否是isInitContainer
 func isInitContainer(pod *v1.Pod, container *v1.Container) bool {
 	for _, initContainer := range pod.Spec.InitContainers {
 		if initContainer.Name == container.Name {

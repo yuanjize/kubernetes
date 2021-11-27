@@ -21,20 +21,24 @@ import (
 )
 
 // MemoryTable contains memory information
+// 一个numa node的内存信息
 type MemoryTable struct {
-	TotalMemSize   uint64 `json:"total"`
-	SystemReserved uint64 `json:"systemReserved"`
-	Allocatable    uint64 `json:"allocatable"`
-	Reserved       uint64 `json:"reserved"`
-	Free           uint64 `json:"free"`
+	TotalMemSize   uint64 `json:"total"`          // 总内存大小(hugepage的话就是可用的总的hugepage)
+	SystemReserved uint64 `json:"systemReserved"` // 保留内存大小，给系统守护进程和kubelete用
+	Allocatable    uint64 `json:"allocatable"`    //可分配内存大小
+	Reserved       uint64 `json:"reserved"`      // 目前认为是已分配内存大小
+	Free           uint64 `json:"free"` // 可以使用的内存大小，初始化 Allocatable=Free=TotalMemSize-SystemReserved
 }
 
 // NUMANodeState contains NUMA node related information
+// 每个numa节点的内存使用状态
 type NUMANodeState struct {
 	// NumberOfAssignments contains a number memory assignments from this node
 	// When the container requires memory and hugepages it will increase number of assignments by two
+	// 有几个容器的block使用了该node的内存
 	NumberOfAssignments int `json:"numberOfAssignments"`
 	// MemoryTable contains NUMA node memory related information
+	// numa节点内存信息
 	MemoryMap map[v1.ResourceName]*MemoryTable `json:"memoryMap"`
 	// Cells contains the current NUMA node and all other nodes that are in a group with current NUMA node
 	// This parameter indicates if the current node is used for the multiple NUMA node memory allocation
@@ -44,6 +48,7 @@ type NUMANodeState struct {
 }
 
 // NUMANodeMap contains memory information for each NUMA node.
+// NUMA内存节点状态
 type NUMANodeMap map[int]*NUMANodeState
 
 // Clone returns a copy of NUMANodeMap
@@ -86,6 +91,7 @@ type Block struct {
 }
 
 // ContainerMemoryAssignments stores memory assignments of containers
+// 记录给容器分配的内存
 type ContainerMemoryAssignments map[string]map[string][]Block
 
 // Clone returns a copy of ContainerMemoryAssignments

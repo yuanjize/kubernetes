@@ -18,6 +18,7 @@ package memorymanager
 
 import (
 	"fmt"
+	"k8s.io/kubernetes/vendor/k8s.io/klog/v2"
 	"sync"
 
 	cadvisorapi "github.com/google/cadvisor/info/v1"
@@ -52,6 +53,7 @@ func (s *sourcesReadyStub) AddSource(source string) {}
 func (s *sourcesReadyStub) AllReady() bool          { return true }
 
 // Manager interface provides methods for Kubelet to manage pod memory.
+/// 实现了HintProvider接口，主要是实现还是通过Policy实现的
 type Manager interface {
 	// Start is called during Kubelet initialization.
 	Start(activePods ActivePodsFunc, sourcesReady config.SourcesReady, podStatusProvider status.PodStatusProvider, containerRuntime runtimeService, initialContainers containermap.ContainerMap) error
@@ -141,6 +143,7 @@ func NewManager(policyName string, machineInfo *cadvisorapi.MachineInfo, nodeAll
 		policy = NewPolicyNone()
 
 	case policyTypeStatic:
+		// 整合节点内存信息
 		systemReserved, err := getSystemReservedMemory(machineInfo, nodeAllocatableReservation, reservedMemory)
 		if err != nil {
 			return nil, err
@@ -202,6 +205,7 @@ func (m *manager) AddContainer(pod *v1.Pod, container *v1.Container, containerID
 	// started init containers. This will free up the memory from these init containers
 	// for use in other pods. If the current container happens to be an init container,
 	// we skip deletion of it until the next container is added, and this is called again.
+	// 因为init容器是按照顺序一个一个启动的，所以可以把该容器之前使用的容器占用的资源都都释放
 	for _, initContainer := range pod.Spec.InitContainers {
 		if initContainer.Name == container.Name {
 			break
@@ -212,6 +216,7 @@ func (m *manager) AddContainer(pod *v1.Pod, container *v1.Container, containerID
 }
 
 // GetMemoryNUMANodes provides NUMA nodes that used to allocate the container memory
+// 获取容器内存分配使用的numa node集合
 func (m *manager) GetMemoryNUMANodes(pod *v1.Pod, container *v1.Container) sets.Int {
 	// Get NUMA node affinity of blocks assigned to the container during Allocate()
 	numaNodes := sets.NewInt()
@@ -232,19 +237,20 @@ func (m *manager) GetMemoryNUMANodes(pod *v1.Pod, container *v1.Container) sets.
 }
 
 // Allocate is called to pre-allocate memory resources during Pod admission.
+// 为容器分配内存资源
 func (m *manager) Allocate(pod *v1.Pod, container *v1.Container) error {
 	// The pod is during the admission phase. We need to save the pod to avoid it
 	// being cleaned before the admission ended
-	m.setPodPendingAdmission(pod)
+	m.setPodPendingAdmission(pod)  // 设置为正在处理的Pod
 
 	// Garbage collect any stranded resources before allocation
-	m.removeStaleState()
+	m.removeStaleState()  // 回收没用的资源
 
 	m.Lock()
 	defer m.Unlock()
 
 	// Call down into the policy to assign this container memory if required.
-	if err := m.policy.Allocate(m.state, pod, container); err != nil {
+	if err := m.policy.Allocate(m.state, pod, container); err != nil {  // 分配内存资源
 		klog.ErrorS(err, "Allocate error")
 		return err
 	}
@@ -252,6 +258,7 @@ func (m *manager) Allocate(pod *v1.Pod, container *v1.Container) error {
 }
 
 // RemoveContainer removes the container from the state
+// 从state中移除容器，也就是回收内存资源
 func (m *manager) RemoveContainer(containerID string) error {
 	m.Lock()
 	defer m.Unlock()
@@ -274,6 +281,7 @@ func (m *manager) State() state.Reader {
 }
 
 // GetPodTopologyHints returns the topology hints for the topology manager
+// 计算hint
 func (m *manager) GetPodTopologyHints(pod *v1.Pod) map[string][]topologymanager.TopologyHint {
 	// The pod is during the admission phase. We need to save the pod to avoid it
 	// being cleaned before the admission ended
@@ -286,6 +294,7 @@ func (m *manager) GetPodTopologyHints(pod *v1.Pod) map[string][]topologymanager.
 }
 
 // GetTopologyHints returns the topology hints for the topology manager
+// 计算hint
 func (m *manager) GetTopologyHints(pod *v1.Pod, container *v1.Container) map[string][]topologymanager.TopologyHint {
 	// The pod is during the admission phase. We need to save the pod to avoid it
 	// being cleaned before the admission ended
@@ -298,6 +307,7 @@ func (m *manager) GetTopologyHints(pod *v1.Pod, container *v1.Container) map[str
 }
 
 // TODO: move the method to the upper level, to re-use it under the CPU and memory managers
+// 回收未活跃Pod的内存资源
 func (m *manager) removeStaleState() {
 	// Only once all sources are ready do we attempt to remove any stale state.
 	// This ensures that the call to `m.activePods()` below will succeed with
@@ -340,12 +350,13 @@ func (m *manager) removeStaleState() {
 		}
 	}
 }
-
+// 从state中移除容器释放内存资源
 func (m *manager) policyRemoveContainerByRef(podUID string, containerName string) {
 	m.policy.RemoveContainer(m.state, podUID, containerName)
 	m.containerMap.RemoveByContainerRef(podUID, containerName)
 }
 
+// 根据reservedMemory对同名资源进行聚合
 func getTotalMemoryTypeReserved(machineInfo *cadvisorapi.MachineInfo, reservedMemory []kubeletconfig.MemoryReservation) (map[v1.ResourceName]resource.Quantity, error) {
 	totalMemoryType := map[v1.ResourceName]resource.Quantity{}
 
@@ -358,7 +369,7 @@ func getTotalMemoryTypeReserved(machineInfo *cadvisorapi.MachineInfo, reservedMe
 		if !numaNodes[int(reservation.NumaNode)] {
 			return nil, fmt.Errorf("the reserved memory configuration references a NUMA node %d that does not exist on this machine", reservation.NumaNode)
 		}
-
+        // 同名资源聚合一下
 		for resourceName, q := range reservation.Limits {
 			if value, ok := totalMemoryType[resourceName]; ok {
 				q.Add(value)
@@ -369,20 +380,20 @@ func getTotalMemoryTypeReserved(machineInfo *cadvisorapi.MachineInfo, reservedMe
 
 	return totalMemoryType, nil
 }
-
+// 校验配置，先不管
 func validateReservedMemory(machineInfo *cadvisorapi.MachineInfo, nodeAllocatableReservation v1.ResourceList, reservedMemory []kubeletconfig.MemoryReservation) error {
 	totalMemoryType, err := getTotalMemoryTypeReserved(machineInfo, reservedMemory)
 	if err != nil {
 		return err
 	}
 
-	commonMemoryTypeSet := make(map[v1.ResourceName]bool)
+	commonMemoryTypeSet := make(map[v1.ResourceName]bool) // 用来几所所有内存相关资源的名称
 	for resourceType := range totalMemoryType {
 		commonMemoryTypeSet[resourceType] = true
 	}
 
 	for resourceType := range nodeAllocatableReservation {
-		if !(corev1helper.IsHugePageResourceName(resourceType) || resourceType == v1.ResourceMemory) {
+		if !(corev1helper.IsHugePageResourceName(resourceType) || resourceType == v1.ResourceMemory) { // 只有huge或者内存相关的才会放到commonMemoryTypeSet中
 			continue
 		}
 		commonMemoryTypeSet[resourceType] = true
@@ -406,7 +417,7 @@ func validateReservedMemory(machineInfo *cadvisorapi.MachineInfo, nodeAllocatabl
 
 	return nil
 }
-
+// 返回的是node->资源名称->资源量
 func convertReserved(machineInfo *cadvisorapi.MachineInfo, reservedMemory []kubeletconfig.MemoryReservation) (systemReservedMemory, error) {
 	reservedMemoryConverted := make(map[int]map[v1.ResourceName]uint64)
 	for _, node := range machineInfo.Topology {
@@ -425,7 +436,7 @@ func convertReserved(machineInfo *cadvisorapi.MachineInfo, reservedMemory []kube
 
 	return reservedMemoryConverted, nil
 }
-
+// 调用convertReserved
 func getSystemReservedMemory(machineInfo *cadvisorapi.MachineInfo, nodeAllocatableReservation v1.ResourceList, reservedMemory []kubeletconfig.MemoryReservation) (systemReservedMemory, error) {
 	if err := validateReservedMemory(machineInfo, nodeAllocatableReservation, reservedMemory); err != nil {
 		return nil, err
@@ -440,11 +451,13 @@ func getSystemReservedMemory(machineInfo *cadvisorapi.MachineInfo, nodeAllocatab
 }
 
 // GetAllocatableMemory returns the amount of allocatable memory for each NUMA node
+// 获取每个NUMAnode可以分配的内存
 func (m *manager) GetAllocatableMemory() []state.Block {
 	return m.allocatableMemory
 }
 
 // GetMemory returns the memory allocated by a container from NUMA nodes
+// 获取给容器分配的内存
 func (m *manager) GetMemory(podUID, containerName string) []state.Block {
 	return m.state.GetMemoryBlocks(podUID, containerName)
 }

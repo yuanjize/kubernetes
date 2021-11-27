@@ -41,7 +41,7 @@ import (
 // ActivePodsFunc is a function that returns a list of pods to reconcile.
 type ActivePodsFunc func() []*v1.Pod
 
-// 用来更新容器资源
+// 用来通过cri-api更新容器资源
 type runtimeService interface {
 	UpdateContainerResources(id string, resources *runtimeapi.LinuxContainerResources) error
 }
