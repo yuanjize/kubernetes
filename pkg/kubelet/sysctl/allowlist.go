@@ -29,7 +29,9 @@ const (
 	AnnotationInvalidReason = "InvalidSysctlAnnotation"
 	ForbiddenReason         = "SysctlForbidden"
 )
-
+/*
+ 实现Pod的准入控制接口，如果Pod配置的sysctl不在白名单中，那么准入失败
+*/
 // patternAllowlist takes a list of sysctls or sysctl patterns (ending in *) and
 // checks validity via a sysctl and prefix map, rejecting those which are not known
 // to be namespaced.
@@ -80,6 +82,7 @@ func NewAllowlist(patterns []string) (*patternAllowlist, error) {
 // The parameters hostNet and hostIPC are used to forbid sysctls for pod sharing the
 // respective namespaces with the host. This check is only possible for sysctls on
 // the static default allowlist, not those on the custom allowlist provided by the admin.
+// 如果pod使用的是宿主机的网络或者IPC，禁止相关的sysctl执行
 func (w *patternAllowlist) validateSysctl(sysctl string, hostNet, hostIPC bool) error {
 	nsErrorFmt := "%q not allowed with host %s enabled"
 	if ns, found := w.sysctls[sysctl]; found {

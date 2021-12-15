@@ -37,6 +37,7 @@ const (
 	// SignalImageFsInodesFree is amount of inodes available on filesystem that container runtime uses for storing images and container writable layers.
 	SignalImageFsInodesFree Signal = "imagefs.inodesFree"
 	// SignalAllocatableMemoryAvailable is amount of memory available for pod allocation (i.e. allocatable - workingSet (of pods), in bytes.
+	// 可分配给Pod的内存数量
 	SignalAllocatableMemoryAvailable Signal = "allocatableMemory.available"
 	// SignalPIDAvailable is amount of PID available for pod allocation
 	SignalPIDAvailable Signal = "pid.available"
@@ -68,6 +69,7 @@ var OpForSignal = map[Signal]ThresholdOperator{
 }
 
 // ThresholdValue is a value holder that abstracts literal versus percentage based quantity
+// 阀值
 type ThresholdValue struct {
 	// The following fields are exclusive. Only the topmost non-zero field is used.
 
@@ -78,6 +80,7 @@ type ThresholdValue struct {
 }
 
 // Threshold defines a metric for when eviction should occur.
+// 定义什么时候到达阀值
 type Threshold struct {
 	// Signal defines the entity that was measured.
 	Signal Signal
@@ -92,6 +95,7 @@ type Threshold struct {
 }
 
 // GetThresholdQuantity returns the expected quantity value for a thresholdValue
+// 返回value*capacity
 func GetThresholdQuantity(value ThresholdValue, capacity *resource.Quantity) *resource.Quantity {
 	if value.Quantity != nil {
 		res := value.Quantity.DeepCopy()

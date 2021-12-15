@@ -41,9 +41,9 @@ type realWatcher struct {
 }
 
 var _ Watcher = &realWatcher{}
-
 // NewWatcher creates and initializes a OOMWatcher backed by Cadvisor as
 // the oom streamer.
+// 就是watch并记录系统OOM事件
 func NewWatcher(recorder record.EventRecorder) (Watcher, error) {
 	oomStreamer, err := oomparser.New()
 	if err != nil {

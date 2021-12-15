@@ -124,9 +124,9 @@ type ContainerManager interface {
 type NodeConfig struct {
 	RuntimeCgroupsName    string
 	SystemCgroupsName     string
-	KubeletCgroupsName    string
-	ContainerRuntime      string
-	CgroupsPerQOS         bool
+	KubeletCgroupsName    string // kubelet进程对应的cgroupName
+	ContainerRuntime      string //docker守护进程对应的cgroupName
+	CgroupsPerQOS         bool   // 支持qos级别的cgroup
 	CgroupRoot            string
 	CgroupDriver          string
 	KubeletRootDir        string
@@ -146,8 +146,8 @@ type NodeConfig struct {
 }
 
 type NodeAllocatableConfig struct {
-	KubeReservedCgroupName   string
-	SystemReservedCgroupName string
+	KubeReservedCgroupName   string // KubeReserved对应的cgroupname
+	SystemReservedCgroupName string // SystemReserved对应的cgroupName
 	ReservedSystemCPUs       cpuset.CPUSet
 	EnforceNodeAllocatable   sets.String
 	KubeReserved             v1.ResourceList
@@ -157,7 +157,7 @@ type NodeAllocatableConfig struct {
 
 type Status struct {
 	// Any soft requirements that were unsatisfied.
-	SoftRequirements error
+	SoftRequirements error ///CPU hardcapping unsupported
 }
 
 // parsePercentage parses the percentage string to numeric value.
@@ -194,6 +194,7 @@ func ParseQOSReserved(m map[string]string) (*map[v1.ResourceName]int64, error) {
 	return &reservations, nil
 }
 
+// ResourceDeviceInstances转换为ContainerDevices
 func containerDevicesFromResourceDeviceInstances(devs devicemanager.ResourceDeviceInstances) []*podresourcesapi.ContainerDevices {
 	var respDevs []*podresourcesapi.ContainerDevices
 

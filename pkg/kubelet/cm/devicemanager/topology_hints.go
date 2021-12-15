@@ -28,6 +28,7 @@ import (
 // GetTopologyHints implements the TopologyManager HintProvider Interface which
 // ensures the Device Manager is consulted when Topology Aware Hints for each
 // container are created.
+// 计算hint
 func (m *ManagerImpl) GetTopologyHints(pod *v1.Pod, container *v1.Container) map[string][]topologymanager.TopologyHint {
 	// The pod is during the admission phase. We need to save the pod to avoid it
 	// being cleaned before the admission ended
@@ -62,11 +63,13 @@ func (m *ManagerImpl) GetTopologyHints(pod *v1.Pod, container *v1.Container) map
 					continue
 				}
 				klog.InfoS("Regenerating TopologyHints for resource already allocated to pod", "resource", resource, "pod", klog.KObj(pod), "containerName", container.Name)
+				// 已分配资源
 				deviceHints[resource] = m.generateDeviceTopologyHints(resource, allocated, sets.String{}, requested)
 				continue
 			}
 
 			// Get the list of available devices, for which TopologyHints should be generated.
+			// 有可重用的资源
 			available := m.getAvailableDevices(resource)
 			reusable := m.devicesToReuse[string(pod.UID)][resource]
 			if available.Union(reusable).Len() < requested {
@@ -135,7 +138,7 @@ func (m *ManagerImpl) GetPodTopologyHints(pod *v1.Pod) map[string][]topologymana
 
 	return deviceHints
 }
-
+// 该资源是否有设备支持NUMA对齐
 func (m *ManagerImpl) deviceHasTopologyAlignment(resource string) bool {
 	// If any device has Topology set, we assume they care about alignment.
 	for device := range m.allDevices[resource] {
@@ -145,12 +148,12 @@ func (m *ManagerImpl) deviceHasTopologyAlignment(resource string) bool {
 	}
 	return false
 }
-
+// 可分配的资源
 func (m *ManagerImpl) getAvailableDevices(resource string) sets.String {
 	// Strip all devices in use from the list of healthy ones.
 	return m.healthyDevices[resource].Difference(m.allocatedDevices[resource])
 }
-
+// 计算hint
 func (m *ManagerImpl) generateDeviceTopologyHints(resource string, available sets.String, reusable sets.String, request int) []topologymanager.TopologyHint {
 	// Initialize minAffinitySize to include all NUMA Nodes
 	minAffinitySize := len(m.numaNodes)
@@ -170,6 +173,7 @@ func (m *ManagerImpl) generateDeviceTopologyHints(resource string, available set
 		}
 
 		// Then check to see if all of the reusable devices are part of the bitmask.
+		/// 可重用的要支持NUMA对齐
 		numMatching := 0
 		for d := range reusable {
 			// Skip the device if it doesn't specify any topology info.
@@ -185,6 +189,7 @@ func (m *ManagerImpl) generateDeviceTopologyHints(resource string, available set
 
 		// Finally, check to see if enough available devices remain on the
 		// current NUMA node combination to satisfy the device request.
+		// 可用的也要支持NUMA对齐
 		for d := range available {
 			if mask.AnySet(m.getNUMANodeIds(m.allDevices[resource][d].Topology)) {
 				numMatching++
@@ -217,7 +222,7 @@ func (m *ManagerImpl) generateDeviceTopologyHints(resource string, available set
 
 	return hints
 }
-
+// 获取topology中所有NUMA节点ID
 func (m *ManagerImpl) getNUMANodeIds(topology *pluginapi.TopologyInfo) []int {
 	if topology == nil {
 		return nil
@@ -228,11 +233,12 @@ func (m *ManagerImpl) getNUMANodeIds(topology *pluginapi.TopologyInfo) []int {
 	}
 	return ids
 }
-
+// 获取pod申请的资源
 func (m *ManagerImpl) getPodDeviceRequest(pod *v1.Pod) map[string]int {
 	podResources := sets.NewString()
 
 	// Find the max request of a given resource across all init containers
+	// init容器因为资源可以复用，所以只计算最大资源
 	initContainerRequests := make(map[string]int)
 	for _, container := range pod.Spec.InitContainers {
 		for resourceObj, requestedObj := range container.Resources.Limits {
@@ -257,6 +263,7 @@ func (m *ManagerImpl) getPodDeviceRequest(pod *v1.Pod) map[string]int {
 	}
 
 	// Compute the sum of requests across all app containers for a given resource
+	// 计算app容器资源的和
 	appContainerRequests := make(map[string]int)
 	for _, container := range pod.Spec.Containers {
 		for resourceObj, requestedObj := range container.Resources.Limits {
@@ -272,6 +279,7 @@ func (m *ManagerImpl) getPodDeviceRequest(pod *v1.Pod) map[string]int {
 	}
 
 	// Calculate podRequests as the max of init and app container requests for a given resource
+	// 选出app容器和init容器中最大的
 	podRequests := make(map[string]int)
 	for resource := range podResources {
 		_, initExists := initContainerRequests[resource]

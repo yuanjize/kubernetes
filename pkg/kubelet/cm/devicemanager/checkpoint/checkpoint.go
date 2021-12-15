@@ -31,9 +31,11 @@ type DeviceManagerCheckpoint interface {
 }
 
 // DevicesPerNUMA represents device ids obtained from device plugin per NUMA node id
+// key是numa的id，value是每个node包含的设备id
 type DevicesPerNUMA map[int64][]string
 
 // PodDevicesEntry connects pod information to devices
+// pod和Device的连接信息，一个这个结构一般代表一个容器的分配单位
 type PodDevicesEntry struct {
 	PodUID        string
 	ContainerName string
@@ -46,8 +48,8 @@ type PodDevicesEntry struct {
 // in a checkpoint file.
 // TODO: add version control when we need to change checkpoint format.
 type checkpointData struct {
-	PodDeviceEntries  []PodDevicesEntry
-	RegisteredDevices map[string][]string
+	PodDeviceEntries  []PodDevicesEntry  // 每个item是一个pod分配的资源
+	RegisteredDevices map[string][]string  // 所有注册的设备
 }
 
 // Data holds checkpoint data and its checksum
@@ -63,6 +65,7 @@ func NewDevicesPerNUMA() DevicesPerNUMA {
 
 // Devices is a function that returns all device ids for all NUMA nodes
 // and represent it as sets.String
+// 所有NUMA节点的所有deviceid
 func (dev DevicesPerNUMA) Devices() sets.String {
 	result := sets.NewString()
 

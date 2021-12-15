@@ -24,8 +24,8 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/pluginmanager/cache"
 	schedulerframework "k8s.io/kubernetes/pkg/scheduler/framework"
 )
-
 // ManagerStub provides a simple stub implementation for the Device Manager.
+// manager接口的空实现，不用关心
 type ManagerStub struct{}
 
 // NewManagerStub creates a ManagerStub.

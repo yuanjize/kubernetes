@@ -45,6 +45,7 @@ import (
 const maxProbeRetries = 3
 
 // Prober helps to check the liveness/readiness/startup of a container.
+// 真正用来执行/检查容器的探针，可以认为就是简单的探针执行的封装
 type prober struct {
 	exec execprobe.Prober
 	// probe types needs different httpprobe instances so they don't
@@ -88,6 +89,7 @@ func (pb *prober) recordContainerEvent(pod *v1.Pod, container *v1.Container, eve
 }
 
 // probe probes the container.
+// 执行探针
 func (pb *prober) probe(probeType probeType, pod *v1.Pod, status v1.PodStatus, container v1.Container, containerID kubecontainer.ContainerID) (results.Result, error) {
 	var probeSpec *v1.Probe
 	switch probeType {
@@ -129,6 +131,7 @@ func (pb *prober) probe(probeType probeType, pod *v1.Pod, status v1.PodStatus, c
 
 // runProbeWithRetries tries to probe the container in a finite loop, it returns the last result
 // if it never succeeds.
+// 执行探针，如果失败的话最多重拾retries次
 func (pb *prober) runProbeWithRetries(probeType probeType, p *v1.Probe, pod *v1.Pod, status v1.PodStatus, container v1.Container, containerID kubecontainer.ContainerID, retries int) (probe.Result, string, error) {
 	var err error
 	var result probe.Result
@@ -144,6 +147,7 @@ func (pb *prober) runProbeWithRetries(probeType probeType, p *v1.Probe, pod *v1.
 
 // buildHeaderMap takes a list of HTTPHeader <name, value> string
 // pairs and returns a populated string->[]string http.Header map.
+// 构建header
 func buildHeader(headerList []v1.HTTPHeader) http.Header {
 	headers := make(http.Header)
 	for _, header := range headerList {
@@ -151,12 +155,12 @@ func buildHeader(headerList []v1.HTTPHeader) http.Header {
 	}
 	return headers
 }
-
+// 真正执行探针
 func (pb *prober) runProbe(probeType probeType, p *v1.Probe, pod *v1.Pod, status v1.PodStatus, container v1.Container, containerID kubecontainer.ContainerID) (probe.Result, string, error) {
 	timeout := time.Duration(p.TimeoutSeconds) * time.Second
 	if p.Exec != nil {
 		klog.V(4).InfoS("Exec-Probe runProbe", "pod", klog.KObj(pod), "containerName", container.Name, "execCommand", p.Exec.Command)
-		command := kubecontainer.ExpandContainerCommandOnlyStatic(p.Exec.Command, container.Env)
+		command := kubecontainer.ExpandContainerCommandOnlyStatic(p.Exec.Command, container.Env) // 展开命令
 		return pb.exec.Probe(pb.newExecInContainer(container, containerID, command, timeout))
 	}
 	if p.HTTPGet != nil {
@@ -198,7 +202,7 @@ func (pb *prober) runProbe(probeType probeType, p *v1.Probe, pod *v1.Pod, status
 	klog.InfoS("Failed to find probe builder for container", "containerName", container.Name)
 	return probe.Unknown, "", fmt.Errorf("missing probe handler for %s:%s", format.Pod(pod), container.Name)
 }
-
+// 解析端口
 func extractPort(param intstr.IntOrString, container v1.Container) (int, error) {
 	port := -1
 	var err error

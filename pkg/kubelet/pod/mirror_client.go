@@ -29,20 +29,24 @@ import (
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
 )
-
+/*
+  kebulet从配置文件中启动的pod叫做静态pod，静态pod是不收到apiserver和controller管理的，所以kubelet会给每个pod在apiserver建一个mirror pod，以便于可以从apiserver观察到static pod
+*/
 // MirrorClient knows how to create/delete a mirror pod in the API server.
 type MirrorClient interface {
 	// CreateMirrorPod creates a mirror pod in the API server for the given
 	// pod or returns an error.  The mirror pod will have the same annotations
 	// as the given pod as well as an extra annotation containing the hash of
-	// the static pod.
+	// the static pod. mirror pod的注解中会包含原始pod的hash
 	CreateMirrorPod(pod *v1.Pod) error
 	// DeleteMirrorPod deletes the mirror pod with the given full name from
 	// the API server or returns an error.
+	// 根据podFullName删除对应的mirror pod
 	DeleteMirrorPod(podFullName string, uid *types.UID) (bool, error)
 }
 
 // nodeGetter is a subset of NodeLister, simplified for testing.
+// 根据Node名检索Node
 type nodeGetter interface {
 	// Get retrieves the Node for a given name.
 	Get(name string) (*v1.Node, error)
@@ -88,6 +92,7 @@ func (mc *basicMirrorClient) CreateMirrorPod(pod *v1.Pod) error {
 		return fmt.Errorf("failed to get node UID: %v", err)
 	}
 	controller := true
+	// OwnerReferences是当前Node
 	copyPod.OwnerReferences = []metav1.OwnerReference{{
 		APIVersion: v1.SchemeGroupVersion.String(),
 		Kind:       "Node",

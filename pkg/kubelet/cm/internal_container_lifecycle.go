@@ -25,7 +25,9 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/cm/memorymanager"
 	"k8s.io/kubernetes/pkg/kubelet/cm/topologymanager"
 )
-
+/*
+容器声明周期钩子
+*/
 type InternalContainerLifecycle interface {
 	PreCreateContainer(pod *v1.Pod, container *v1.Container, containerConfig *runtimeapi.ContainerConfig) error
 	PreStartContainer(pod *v1.Pod, container *v1.Container, containerID string) error
@@ -39,7 +41,7 @@ type internalContainerLifecycleImpl struct {
 	memoryManager   memorymanager.Manager
 	topologyManager topologymanager.Manager
 }
-
+// 容器启动之前加入到cpu/memory/topology Manager
 func (i *internalContainerLifecycleImpl) PreStartContainer(pod *v1.Pod, container *v1.Container, containerID string) error {
 	if i.cpuManager != nil {
 		i.cpuManager.AddContainer(pod, container, containerID)
@@ -58,7 +60,7 @@ func (i *internalContainerLifecycleImpl) PreStartContainer(pod *v1.Pod, containe
 func (i *internalContainerLifecycleImpl) PreStopContainer(containerID string) error {
 	return nil
 }
-
+// 容器停止之后从topology Manager移除
 func (i *internalContainerLifecycleImpl) PostStopContainer(containerID string) error {
 	if utilfeature.DefaultFeatureGate.Enabled(kubefeatures.TopologyManager) {
 		err := i.topologyManager.RemoveContainer(containerID)

@@ -18,6 +18,13 @@ package lifecycle
 
 import "k8s.io/api/core/v1"
 
+/*
+  定义三种接口
+   1.PodAdmitHandler Pod是否允许准入
+   2.PodSyncHandler Pod是否可以被驱逐（Evict）
+   3.PodSyncLoopHandler Pod是否允许同步
+*/
+
 // PodAdmitAttributes is the context for a pod admission decision.
 // The member fields of this struct should never be mutated.
 type PodAdmitAttributes struct {
@@ -45,12 +52,14 @@ type PodAdmitHandler interface {
 }
 
 // PodAdmitTarget maintains a list of handlers to invoke.
+// 一个PodAdmitHandler集合
 type PodAdmitTarget interface {
 	// AddPodAdmitHandler adds the specified handler.
 	AddPodAdmitHandler(a PodAdmitHandler)
 }
 
 // PodSyncLoopHandler is invoked during each sync loop iteration.
+// sync循环会调用该函数，返回true代表需要被同步
 type PodSyncLoopHandler interface {
 	// ShouldSync returns true if the pod needs to be synced.
 	// This operation must return immediately as its called for each pod.
@@ -59,12 +68,14 @@ type PodSyncLoopHandler interface {
 }
 
 // PodSyncLoopTarget maintains a list of handlers to pod sync loop.
+// PodSyncLoopHandler集合
 type PodSyncLoopTarget interface {
 	// AddPodSyncLoopHandler adds the specified handler.
 	AddPodSyncLoopHandler(a PodSyncLoopHandler)
 }
 
 // ShouldEvictResponse provides the result of a should evict request.
+// 是否应该驱逐
 type ShouldEvictResponse struct {
 	// if true, the pod should be evicted.
 	Evict bool
@@ -75,6 +86,7 @@ type ShouldEvictResponse struct {
 }
 
 // PodSyncHandler is invoked during each sync pod operation.
+// sync循环调用，用来判断该Pod是否应该被驱逐
 type PodSyncHandler interface {
 	// ShouldEvict is invoked during each sync pod operation to determine
 	// if the pod should be evicted from the kubelet.  If so, the pod status
@@ -86,12 +98,14 @@ type PodSyncHandler interface {
 }
 
 // PodSyncTarget maintains a list of handlers to pod sync.
+// PodSyncHandler集合
 type PodSyncTarget interface {
 	// AddPodSyncHandler adds the specified handler
 	AddPodSyncHandler(a PodSyncHandler)
 }
 
 // PodLifecycleTarget groups a set of lifecycle interfaces for convenience.
+// 上面三种集合的集合
 type PodLifecycleTarget interface {
 	PodAdmitTarget
 	PodSyncLoopTarget

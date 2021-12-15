@@ -29,6 +29,7 @@ import (
 )
 
 // Stats provides basic information about max and current process count
+// 获取当前进程数和最大进程数
 func Stats() (*statsapi.RlimitStats, error) {
 	rlimit := &statsapi.RlimitStats{}
 

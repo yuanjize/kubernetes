@@ -640,6 +640,7 @@ func (kl *Kubelet) defaultNodeStatusFuncs() []func(*v1.Node) error {
 }
 
 // Validate given node IP belongs to the current host
+// 校验IP
 func validateNodeIP(nodeIP net.IP) error {
 	// Honor IP limitations set in setNodeStatus()
 	if nodeIP.To4() == nil && nodeIP.To16() == nil {

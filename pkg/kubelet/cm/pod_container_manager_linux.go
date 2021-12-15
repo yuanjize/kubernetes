@@ -37,23 +37,31 @@ const (
 	podCgroupNamePrefix = "pod"
 )
 
+/*
+  Pod级的cgroup管理，cgroup的级别是 root->qos->pod
+*/
+
 // podContainerManagerImpl implements podContainerManager interface.
 // It is the general implementation which allows pod level container
 // management if qos Cgroup is enabled.
+//  就是CgroupManager的wrapper，多加了几个函数，基本功能都是通过CgroupManager实现的
 type podContainerManagerImpl struct {
 	// qosContainersInfo hold absolute paths of the top level qos containers
-	qosContainersInfo QOSContainersInfo
-	// Stores the mounted cgroup subsystems
+	qosContainersInfo QOSContainersInfo //  不同qos类型的pod有不同的cgroup path
+	// Stores the mounted cgroup subsystems 存储挂载路径
 	subsystems *CgroupSubsystems
 	// cgroupManager is the cgroup Manager Object responsible for managing all
-	// pod cgroups.
+	// pod cgroups.  负责管理cgroup，对cgroup进行增删改查
 	cgroupManager CgroupManager
 	// Maximum number of pids in a pod
+	// pod的最大pid数量
 	podPidsLimit int64
 	// enforceCPULimits controls whether cfs quota is enforced or not
+	// cfs quota是否是强制的·
 	enforceCPULimits bool
 	// cpuCFSQuotaPeriod is the cfs period value, cfs_period_us, setting per
 	// node for all containers in usec
+	//cfs_period_us 的数值
 	cpuCFSQuotaPeriod uint64
 }
 
@@ -61,6 +69,7 @@ type podContainerManagerImpl struct {
 var _ PodContainerManager = &podContainerManagerImpl{}
 
 // Exists checks if the pod's cgroup already exists
+// 判断pod对应的cgroup是否存在
 func (m *podContainerManagerImpl) Exists(pod *v1.Pod) bool {
 	podContainerName, _ := m.GetPodContainerName(pod)
 	return m.cgroupManager.Exists(podContainerName)
@@ -69,8 +78,9 @@ func (m *podContainerManagerImpl) Exists(pod *v1.Pod) bool {
 // EnsureExists takes a pod as argument and makes sure that
 // pod cgroup exists if qos cgroup hierarchy flag is enabled.
 // If the pod level container doesn't already exist it is created.
+// 如果cgroup不存在就创建cgroup
 func (m *podContainerManagerImpl) EnsureExists(pod *v1.Pod) error {
-	podContainerName, _ := m.GetPodContainerName(pod)
+	podContainerName, _ := m.GetPodContainerName(pod)  // 计算cgroup名字
 	// check if container already exist
 	alreadyExists := m.Exists(pod)
 	if !alreadyExists {
@@ -80,6 +90,7 @@ func (m *podContainerManagerImpl) EnsureExists(pod *v1.Pod) error {
 			enforceMemoryQoS = true
 		}
 		// Create the pod container
+		// 创建cgroup的参数
 		containerConfig := &CgroupConfig{
 			Name:               podContainerName,
 			ResourceParameters: ResourceConfigForPod(pod, m.enforceCPULimits, m.cpuCFSQuotaPeriod, enforceMemoryQoS),
@@ -90,6 +101,7 @@ func (m *podContainerManagerImpl) EnsureExists(pod *v1.Pod) error {
 		if enforceMemoryQoS {
 			klog.V(4).InfoS("MemoryQoS config for pod", "pod", klog.KObj(pod), "unified", containerConfig.ResourceParameters.Unified)
 		}
+		// 创建cgroup
 		if err := m.cgroupManager.Create(containerConfig); err != nil {
 			return fmt.Errorf("failed to create container for %v : %v", podContainerName, err)
 		}
@@ -98,6 +110,7 @@ func (m *podContainerManagerImpl) EnsureExists(pod *v1.Pod) error {
 }
 
 // GetPodContainerName returns the CgroupName identifier, and its literal cgroupfs form on the host.
+// 根据podUid，算出来pod对应的CgroupName
 func (m *podContainerManagerImpl) GetPodContainerName(pod *v1.Pod) (CgroupName, string) {
 	podQOS := v1qos.GetPodQOS(pod)
 	// Get the parent QOS container name
@@ -113,6 +126,7 @@ func (m *podContainerManagerImpl) GetPodContainerName(pod *v1.Pod) (CgroupName, 
 	podContainer := GetPodCgroupNameSuffix(pod.UID)
 
 	// Get the absolute path of the cgroup
+	// cgroup路径
 	cgroupName := NewCgroupName(parentContainer, podContainer)
 	// Get the literal cgroupfs name
 	cgroupfsName := m.cgroupManager.Name(cgroupName)
@@ -121,6 +135,7 @@ func (m *podContainerManagerImpl) GetPodContainerName(pod *v1.Pod) (CgroupName, 
 }
 
 // Kill one process ID
+// 根据进程id杀死进程
 func (m *podContainerManagerImpl) killOnePid(pid int) error {
 	// os.FindProcess never returns an error on POSIX
 	// https://go-review.googlesource.com/c/go/+/19093
@@ -141,6 +156,7 @@ func (m *podContainerManagerImpl) killOnePid(pid int) error {
 
 // Scan through the whole cgroup directory and kill all processes either
 // attached to the pod cgroup or to a container cgroup under the pod cgroup
+// 杀死CgroupName下面的所有的pid对应的进程
 func (m *podContainerManagerImpl) tryKillingCgroupProcesses(podCgroup CgroupName) error {
 	pidsToKill := m.cgroupManager.Pids(podCgroup)
 	// No pids charged to the terminated pod cgroup return
@@ -178,6 +194,7 @@ func (m *podContainerManagerImpl) tryKillingCgroupProcesses(podCgroup CgroupName
 }
 
 // Destroy destroys the pod container cgroup paths
+// 首先杀死CgroupName包含的所有进程，然后使用cgroupManager删除Cgroup
 func (m *podContainerManagerImpl) Destroy(podCgroup CgroupName) error {
 	// Try killing all the processes attached to the pod cgroup
 	if err := m.tryKillingCgroupProcesses(podCgroup); err != nil {
@@ -198,11 +215,13 @@ func (m *podContainerManagerImpl) Destroy(podCgroup CgroupName) error {
 }
 
 // ReduceCPULimits reduces the CPU CFS values to the minimum amount of shares.
+// 设置cpushare为最小值
 func (m *podContainerManagerImpl) ReduceCPULimits(podCgroup CgroupName) error {
 	return m.cgroupManager.ReduceCPULimits(podCgroup)
 }
 
 // IsPodCgroup returns true if the literal cgroupfs name corresponds to a pod
+// 返回 1.是否对应一个pod  2.cgroupfs name对应的podUid
 func (m *podContainerManagerImpl) IsPodCgroup(cgroupfs string) (bool, types.UID) {
 	// convert the literal cgroupfs form to the driver specific value
 	cgroupName := m.cgroupManager.CgroupName(cgroupfs)
@@ -211,7 +230,7 @@ func (m *podContainerManagerImpl) IsPodCgroup(cgroupfs string) (bool, types.UID)
 	for _, qosContainerName := range qosContainersList {
 		// a pod cgroup is a direct child of a qos node, so check if its a match
 		if len(cgroupName) == len(qosContainerName)+1 {
-			basePath = cgroupName[len(qosContainerName)]
+			basePath = cgroupName[len(qosContainerName)] // 最后一段
 		}
 	}
 	if basePath == "" {
@@ -229,6 +248,7 @@ func (m *podContainerManagerImpl) IsPodCgroup(cgroupfs string) (bool, types.UID)
 
 // GetAllPodsFromCgroups scans through all the subsystems of pod cgroups
 // Get list of pods whose cgroup still exist on the cgroup mounts
+// 获取所有cgroup的 podUID -> CgroupName
 func (m *podContainerManagerImpl) GetAllPodsFromCgroups() (map[types.UID]CgroupName, error) {
 	// Map for storing all the found pods on the disk
 	foundPods := make(map[types.UID]CgroupName)

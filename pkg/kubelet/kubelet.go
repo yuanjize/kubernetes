@@ -968,7 +968,7 @@ type Kubelet struct {
 	volumePluginMgr *volume.VolumePluginMgr
 
 	// Handles container probing.
-	probeManager prober.Manager
+	probeManager prober.Manager // 处理探针的
 	// Manages container health check results.
 	livenessManager  proberesults.Manager
 	readinessManager proberesults.Manager

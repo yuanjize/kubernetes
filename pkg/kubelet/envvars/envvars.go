@@ -29,6 +29,7 @@ import (
 // FromServices builds environment variables that a container is started with,
 // which tell the container where to find the services it may need, which are
 // provided as an argument.
+// 根据service配置，生成一些service相关的环境变量注入到docker中，日历service的协议，端口，域名ip等等
 func FromServices(services []*v1.Service) []v1.EnvVar {
 	var result []v1.EnvVar
 	for i := range services {

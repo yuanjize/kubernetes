@@ -48,6 +48,7 @@ var _ ThresholdNotifier = &memoryThresholdNotifier{}
 
 // NewMemoryThresholdNotifier creates a ThresholdNotifier which is designed to respond to the given threshold.
 // UpdateThreshold must be called once before the threshold will be active.
+// 使用CgroupNotifier监听内存使用变化（memory.usage_in_bytes），UpdateThreshold用来重新计算内存阀值
 func NewMemoryThresholdNotifier(threshold evictionapi.Threshold, cgroupRoot string, factory NotifierFactory, handler func(string)) (ThresholdNotifier, error) {
 	cgroups, err := cm.GetCgroupSubsystems()
 	if err != nil {
@@ -76,7 +77,7 @@ func (m *memoryThresholdNotifier) Start() {
 		m.handler(fmt.Sprintf("eviction manager: %s crossed", m.Description()))
 	}
 }
-
+// 根据summary重新计算threshold并对其进行监听
 func (m *memoryThresholdNotifier) UpdateThreshold(summary *statsapi.Summary) error {
 	memoryStats := summary.Node.Memory
 	if isAllocatableEvictionThreshold(m.threshold) {
@@ -127,6 +128,7 @@ func (m *memoryThresholdNotifier) Description() string {
 var _ NotifierFactory = &CgroupNotifierFactory{}
 
 // CgroupNotifierFactory knows how to make CgroupNotifiers which integrate with the kernel
+// CgroupNotifier工厂函数，其实就是用NewCgroupNotifier，传进去不同的监听路径
 type CgroupNotifierFactory struct{}
 
 // NewCgroupNotifier implements the NotifierFactory interface

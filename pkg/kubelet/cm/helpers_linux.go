@@ -97,6 +97,7 @@ func MilliCPUToShares(milliCPU int64) uint64 {
 
 // HugePageLimits converts the API representation to a map
 // from huge page size (in bytes) to huge page limit (in bytes).
+// 返回：key是HugePage的页大小，value是申请的这种页面的数量
 func HugePageLimits(resourceList v1.ResourceList) map[int64]int64 {
 	hugePageLimits := map[int64]int64{}
 	for k, v := range resourceList {
@@ -113,6 +114,7 @@ func HugePageLimits(resourceList v1.ResourceList) map[int64]int64 {
 }
 
 // ResourceConfigForPod takes the input pod and outputs the cgroup resource config.
+// 计算资源限制配置
 func ResourceConfigForPod(pod *v1.Pod, enforceCPULimits bool, cpuPeriod uint64, enforceMemoryQoS bool) *ResourceConfig {
 	// sum requests and limits.
 	reqs, limits := resource.PodRequestsAndLimits(pod)
@@ -135,8 +137,8 @@ func ResourceConfigForPod(pod *v1.Pod, enforceCPULimits bool, cpuPeriod uint64, 
 	cpuQuota := MilliCPUToQuota(cpuLimits, int64(cpuPeriod))
 
 	// track if limits were applied for each resource.
-	memoryLimitsDeclared := true
-	cpuLimitsDeclared := true
+	memoryLimitsDeclared := true // 为true时，所有容器Memory Limit 非0
+	cpuLimitsDeclared := true    // 为true时，所有容器CPU Limit 非0
 	// map hugepage pagesize (bytes) to limits (bytes)
 	hugePageLimits := map[int64]int64{}
 	for _, container := range pod.Spec.Containers {
@@ -217,6 +219,7 @@ func ResourceConfigForPod(pod *v1.Pod, enforceCPULimits bool, cpuPeriod uint64, 
 }
 
 // getCgroupSubsystemsV1 returns information about the mounted cgroup v1 subsystems
+// 返回cgroup子系统挂载点信息
 func getCgroupSubsystemsV1() (*CgroupSubsystems, error) {
 	// get all cgroup mounts.
 	allCgroups, err := libcontainercgroups.GetCgroupMounts(true)
@@ -247,6 +250,7 @@ func getCgroupSubsystemsV1() (*CgroupSubsystems, error) {
 }
 
 // getCgroupSubsystemsV2 returns information about the enabled cgroup v2 subsystems
+// 返回cgroup子系统的挂载信息
 func getCgroupSubsystemsV2() (*CgroupSubsystems, error) {
 	controllers, err := libcontainercgroups.GetAllSubsystems()
 	if err != nil {
@@ -272,6 +276,7 @@ func getCgroupSubsystemsV2() (*CgroupSubsystems, error) {
 }
 
 // GetCgroupSubsystems returns information about the mounted cgroup subsystems
+// 返回cgroup子系统挂载点信息
 func GetCgroupSubsystems() (*CgroupSubsystems, error) {
 	if libcontainercgroups.IsCgroup2UnifiedMode() {
 		return getCgroupSubsystemsV2()
@@ -283,6 +288,7 @@ func GetCgroupSubsystems() (*CgroupSubsystems, error) {
 // getCgroupProcs takes a cgroup directory name as an argument
 // reads through the cgroup's procs file and returns a list of tgid's.
 // It returns an empty list if a procs file doesn't exists
+// 从文件中读出来pid
 func getCgroupProcs(dir string) ([]int, error) {
 	procsFile := filepath.Join(dir, "cgroup.procs")
 	f, err := os.Open(procsFile)
@@ -310,6 +316,7 @@ func getCgroupProcs(dir string) ([]int, error) {
 }
 
 // GetPodCgroupNameSuffix returns the last element of the pod CgroupName identifier
+// pod.podUID,作为cgroupName的后缀
 func GetPodCgroupNameSuffix(podUID types.UID) string {
 	return podCgroupNamePrefix + string(podUID)
 }

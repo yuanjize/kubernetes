@@ -82,7 +82,7 @@ func (p *staticPolicy) Name() string {
 }
 
 func (p *staticPolicy) Start(s state.State) error {
-	if err := p.validateState(s); err != nil {   // restore状态
+	if err := p.validateState(s); err != nil { // restore状态
 		klog.ErrorS(err, "Invalid state, please drain node and remove policy state file")
 		return err
 	}
@@ -90,6 +90,7 @@ func (p *staticPolicy) Start(s state.State) error {
 }
 
 // Allocate call is idempotent
+// 没有真正的分配资源，只是修改内存的MemoryBlocks和MachineState
 func (p *staticPolicy) Allocate(s state.State, pod *v1.Pod, container *v1.Container) error {
 	// allocate the memory only for guaranteed pods
 	if v1qos.GetPodQOS(pod) != v1.PodQOSGuaranteed {
@@ -121,6 +122,7 @@ func (p *staticPolicy) Allocate(s state.State, pod *v1.Pod, container *v1.Contai
 	// topology manager returned the hint with NUMA affinity nil
 	// we should use the default NUMA affinity calculated the same way as for the topology manager
 	if hint.NUMANodeAffinity == nil {
+		// 算出来一个hint来用
 		defaultHint, err := p.getDefaultHint(machineState, pod, requestedResources)
 		if err != nil {
 			return err
@@ -134,8 +136,10 @@ func (p *staticPolicy) Allocate(s state.State, pod *v1.Pod, container *v1.Contai
 
 	// topology manager returns the hint that does not satisfy completely the container request
 	// we should extend this hint to the one who will satisfy the request and include the current hint
+	// topology manager返回的hint不能满足需求（是否NUMANodeAffinity能满足requestedResources中请求的资源），那就需要我们拓展
+	// 算出来新的Hint，老的必须是信算出来的新的的子集
 	if !isAffinitySatisfyRequest(machineState, bestHint.NUMANodeAffinity, requestedResources) {
-		extendedHint, err := p.extendTopologyManagerHint(machineState, pod, requestedResources, bestHint.NUMANodeAffinity)
+		extendedHint, err := p.extendTopologyManagerHint(machineState, pod, requestedResources, bestHint.NUMANodeAffinity)// 算出来新的Hint，老的必须是信算出来的新的的子集
 		if err != nil {
 			return err
 		}
@@ -150,12 +154,14 @@ func (p *staticPolicy) Allocate(s state.State, pod *v1.Pod, container *v1.Contai
 	maskBits := bestHint.NUMANodeAffinity.GetBits()
 	for resourceName, requestedSize := range requestedResources {
 		// update memory blocks
+		// 算出来分配的Blocks
 		containerBlocks = append(containerBlocks, state.Block{
 			NUMAAffinity: maskBits,
 			Size:         requestedSize,
 			Type:         resourceName,
 		})
 
+		// 除了可以复用的资源，还需要多少资源
 		podReusableMemory := p.getPodReusableMemory(pod, bestHint.NUMANodeAffinity, resourceName)
 		if podReusableMemory >= requestedSize {
 			requestedSize = 0
@@ -164,12 +170,14 @@ func (p *staticPolicy) Allocate(s state.State, pod *v1.Pod, container *v1.Contai
 		}
 
 		// Update nodes memory state
+		// 改变machineState中的内存使用状况
 		p.updateMachineState(machineState, maskBits, resourceName, requestedSize)
 	}
-
+    // 更新复用资源
 	p.updatePodReusableMemory(pod, container, containerBlocks)
-
+    // 更新machineState
 	s.SetMachineState(machineState)
+	// 更新内存Blocks分配情况
 	s.SetMemoryBlocks(podUID, container.Name, containerBlocks)
 
 	// update init containers memory blocks to reflect the fact that we re-used init containers memory
@@ -178,11 +186,13 @@ func (p *staticPolicy) Allocate(s state.State, pod *v1.Pod, container *v1.Contai
 	// we only do this so that the sum(memory_for_all_containers) == total amount of allocated memory to the pod, even
 	// though the final state here doesn't accurately reflect what was (in reality) allocated to each container
 	// TODO: we should refactor our state structs to reflect the amount of the re-used memory
+	// 更新initcontainer的使用状态，因为会复用initcontaine的内存
 	p.updateInitContainersMemoryBlocks(s, pod, container, containerBlocks)
 
 	return nil
 }
 
+// 修改NUMANodeMap状态，就是使用NUMANodeMap改变内存使用状况
 func (p *staticPolicy) updateMachineState(machineState state.NUMANodeMap, numaAffinity []int, resourceName v1.ResourceName, requestedSize uint64) {
 	for _, nodeID := range numaAffinity {
 		machineState[nodeID].NumberOfAssignments++
@@ -213,6 +223,7 @@ func (p *staticPolicy) updateMachineState(machineState state.NUMANodeMap, numaAf
 		nodeResourceMemoryState.Free = 0
 	}
 }
+
 // 返回block对应的 reuseable 资源
 func (p *staticPolicy) getPodReusableMemory(pod *v1.Pod, numaAffinity bitmask.BitMask, resourceName v1.ResourceName) uint64 {
 	podReusableMemory, ok := p.initContainersReusableMemory[string(pod.UID)]
@@ -229,6 +240,7 @@ func (p *staticPolicy) getPodReusableMemory(pod *v1.Pod, numaAffinity bitmask.Bi
 }
 
 // RemoveContainer call is idempotent
+// 移除容器，用容器释放的内存改变machineState
 func (p *staticPolicy) RemoveContainer(s state.State, podUID string, containerName string) {
 	blocks := s.GetMemoryBlocks(podUID, containerName)
 	if blocks == nil {
@@ -277,10 +289,10 @@ func (p *staticPolicy) RemoveContainer(s state.State, podUID string, containerNa
 			releasedSize = 0
 		}
 	}
-
+	// 修改内存使用状态
 	s.SetMachineState(machineState)
 }
-
+// 利用已经分配的内存的hint返回，不重新计算
 func regenerateHints(pod *v1.Pod, ctn *v1.Container, ctnBlocks []state.Block, reqRsrc map[v1.ResourceName]uint64) map[string][]topologymanager.TopologyHint {
 	hints := map[string][]topologymanager.TopologyHint{}
 	for resourceName := range reqRsrc {
@@ -317,11 +329,11 @@ func regenerateHints(pod *v1.Pod, ctn *v1.Container, ctnBlocks []state.Block, re
 	}
 	return hints
 }
-
+// 计算pod容器需要的所有资源
 func getPodRequestedResources(pod *v1.Pod) (map[v1.ResourceName]uint64, error) {
 	reqRsrcsByInitCtrs := make(map[v1.ResourceName]uint64)
 	reqRsrcsByAppCtrs := make(map[v1.ResourceName]uint64)
-
+    // 因为init容器是一个个执行的，所以只要获取最大的资源请求就可以
 	for _, ctr := range pod.Spec.InitContainers {
 		reqRsrcs, err := getRequestedResources(&ctr)
 
@@ -339,6 +351,7 @@ func getPodRequestedResources(pod *v1.Pod) (map[v1.ResourceName]uint64, error) {
 		}
 	}
 
+	// 获取 app 容器的资源和
 	for _, ctr := range pod.Spec.Containers {
 		reqRsrcs, err := getRequestedResources(&ctr)
 
@@ -353,7 +366,7 @@ func getPodRequestedResources(pod *v1.Pod) (map[v1.ResourceName]uint64, error) {
 			reqRsrcsByAppCtrs[rsrcName] += qty
 		}
 	}
-
+    // init容器占用的资源其实是共享资源
 	for rsrcName := range reqRsrcsByAppCtrs {
 		if reqRsrcsByInitCtrs[rsrcName] > reqRsrcsByAppCtrs[rsrcName] {
 			reqRsrcsByAppCtrs[rsrcName] = reqRsrcsByInitCtrs[rsrcName]
@@ -361,7 +374,7 @@ func getPodRequestedResources(pod *v1.Pod) (map[v1.ResourceName]uint64, error) {
 	}
 	return reqRsrcsByAppCtrs, nil
 }
-
+// GetPodTopologyHints 计算hint，如果已经计算过了就用已有的，否则重新计算
 func (p *staticPolicy) GetPodTopologyHints(s state.State, pod *v1.Pod) map[string][]topologymanager.TopologyHint {
 	if v1qos.GetPodQOS(pod) != v1.PodQOSGuaranteed {
 		return nil
@@ -379,17 +392,20 @@ func (p *staticPolicy) GetPodTopologyHints(s state.State, pod *v1.Pod) map[strin
 		// memory allocated for the container. This might happen after a
 		// kubelet restart, for example.
 		if containerBlocks != nil {
+			// // 利用已经分配的内存的hint返回，不重新计算
 			return regenerateHints(pod, &ctn, containerBlocks, reqRsrcs)
 		}
 	}
 
 	// the pod topology hints calculated only once for all containers, so no need to pass re-usable state
+	// 计算hint
 	return p.calculateHints(s.GetMachineState(), pod, reqRsrcs)
 }
 
 // GetTopologyHints implements the topologymanager.HintProvider Interface
 // and is consulted to achieve NUMA aware resource alignment among this
 // and other resource controllers.
+// 和上边函数一样，就是容器级别的
 func (p *staticPolicy) GetTopologyHints(s state.State, pod *v1.Pod, container *v1.Container) map[string][]topologymanager.TopologyHint {
 	if v1qos.GetPodQOS(pod) != v1.PodQOSGuaranteed {
 		return nil
@@ -412,6 +428,7 @@ func (p *staticPolicy) GetTopologyHints(s state.State, pod *v1.Pod, container *v
 	return p.calculateHints(s.GetMachineState(), pod, requestedResources)
 }
 
+// 容器请求的内存相关的资源
 func getRequestedResources(container *v1.Container) (map[v1.ResourceName]uint64, error) {
 	requestedResources := map[v1.ResourceName]uint64{}
 	for resourceName, quantity := range container.Resources.Requests {
@@ -426,16 +443,16 @@ func getRequestedResources(container *v1.Container) (map[v1.ResourceName]uint64,
 	}
 	return requestedResources, nil
 }
-
+// 计算hint
 func (p *staticPolicy) calculateHints(machineState state.NUMANodeMap, pod *v1.Pod, requestedResources map[v1.ResourceName]uint64) map[string][]topologymanager.TopologyHint {
-	var numaNodes []int
+	var numaNodes []int // 所有的numa node
 	for n := range machineState {
 		numaNodes = append(numaNodes, n)
 	}
 	sort.Ints(numaNodes)
 
 	// Initialize minAffinitySize to include all NUMA Cells.
-	minAffinitySize := len(numaNodes)
+	minAffinitySize := len(numaNodes) // 所有的numa node
 
 	hints := map[string][]topologymanager.TopologyHint{}
 	bitmask.IterateBitMasks(numaNodes, func(mask bitmask.BitMask) {
@@ -443,22 +460,26 @@ func (p *staticPolicy) calculateHints(machineState state.NUMANodeMap, pod *v1.Po
 		singleNUMAHint := len(maskBits) == 1
 
 		// the node already in group with another node, it can not be used for the single NUMA node allocation
+		// 该node属于某个组，无法单独分配
 		if singleNUMAHint && len(machineState[maskBits[0]].Cells) > 1 {
 			return
 		}
-
+        // 获取所有maskBits node中的Free内存和Allocatable内存
 		totalFreeSize := map[v1.ResourceName]uint64{}
 		totalAllocatableSize := map[v1.ResourceName]uint64{}
 		// calculate total free memory for the node mask
 		for _, nodeID := range maskBits {
 			// the node already used for the memory allocation
+			// 该节点内存已经被用到过内存分配的地方
 			if !singleNUMAHint && machineState[nodeID].NumberOfAssignments > 0 {
 				// the node used for the single NUMA memory allocation, it can not be used for the multi NUMA node allocation
+				// 该节点已经被用作单NUMA节点内存分配，不能在组内使用了
 				if len(machineState[nodeID].Cells) == 1 {
 					return
 				}
 
 				// the node already used with different group of nodes, it can not be use with in the current hint
+				// 本次分组和已有的分组是否相同
 				if !areGroupsEqual(machineState[nodeID].Cells, maskBits) {
 					return
 				}
@@ -478,6 +499,7 @@ func (p *staticPolicy) calculateHints(machineState state.NUMANodeMap, pod *v1.Po
 		}
 
 		// verify that for all memory types the node mask has enough allocatable resources
+		// 如果满足不了容器请求的内存，那么返回
 		for resourceName, requestedSize := range requestedResources {
 			if totalAllocatableSize[resourceName] < requestedSize {
 				return
@@ -485,11 +507,13 @@ func (p *staticPolicy) calculateHints(machineState state.NUMANodeMap, pod *v1.Po
 		}
 
 		// set the minimum amount of NUMA nodes that can satisfy the container resources requests
+		// minAffinitySize使用node数最少的组合
 		if mask.Count() < minAffinitySize {
 			minAffinitySize = mask.Count()
 		}
 
 		// verify that for all memory types the node mask has enough free resources
+		// 如果满足不了容器请求的内存，那么返回
 		for resourceName, requestedSize := range requestedResources {
 			podReusableMemory := p.getPodReusableMemory(pod, mask, resourceName)
 			if totalFreeSize[resourceName]+podReusableMemory < requestedSize {
@@ -498,6 +522,7 @@ func (p *staticPolicy) calculateHints(machineState state.NUMANodeMap, pod *v1.Po
 		}
 
 		// add the node mask as topology hint for all memory types
+		// 满足所有条件，放到hint中
 		for resourceName := range requestedResources {
 			if _, ok := hints[string(resourceName)]; !ok {
 				hints[string(resourceName)] = []topologymanager.TopologyHint{}
@@ -511,6 +536,7 @@ func (p *staticPolicy) calculateHints(machineState state.NUMANodeMap, pod *v1.Po
 
 	// update hints preferred according to multiNUMAGroups, in case when it wasn't provided, the default
 	// behaviour to prefer the minimal amount of NUMA nodes will be used
+	// 设置Preferred参数，使用最少的node的TopologyHint就是Preferred的
 	for resourceName := range requestedResources {
 		for i, hint := range hints[string(resourceName)] {
 			hints[string(resourceName)][i].Preferred = p.isHintPreferred(hint.NUMANodeAffinity.GetBits(), minAffinitySize)
@@ -519,11 +545,11 @@ func (p *staticPolicy) calculateHints(machineState state.NUMANodeMap, pod *v1.Po
 
 	return hints
 }
-
+// maskBits是否等于minAffinitySize
 func (p *staticPolicy) isHintPreferred(maskBits []int, minAffinitySize int) bool {
 	return len(maskBits) == minAffinitySize
 }
-
+// 两个int十足是否相同，用来判断两个node分组是否相同
 func areGroupsEqual(group1, group2 []int) bool {
 	sort.Ints(group1)
 	sort.Ints(group2)
@@ -616,6 +642,7 @@ func (p *staticPolicy) validateState(s state.State) error {
 
 	return nil
 }
+
 // 验证两个NUMANodeMap是否相等
 func areMachineStatesEqual(ms1, ms2 state.NUMANodeMap) bool {
 	if len(ms1) != len(ms2) {
@@ -725,7 +752,7 @@ func (p *staticPolicy) getResourceSystemReserved(nodeID int, resourceName v1.Res
 	}
 	return systemReserved
 }
-
+// 计算hint并选出来最好（这里没考虑其他资源（cpu等）因素只考虑了内存
 func (p *staticPolicy) getDefaultHint(machineState state.NUMANodeMap, pod *v1.Pod, requestedResources map[v1.ResourceName]uint64) (*topologymanager.TopologyHint, error) {
 	hints := p.calculateHints(machineState, pod, requestedResources)
 	if len(hints) < 1 {
@@ -733,9 +760,9 @@ func (p *staticPolicy) getDefaultHint(machineState state.NUMANodeMap, pod *v1.Po
 	}
 
 	// hints for all memory types should be the same, so we will check hints only for regular memory type
-	return findBestHint(hints[string(v1.ResourceMemory)]), nil
+	return findBestHint(hints[string(v1.ResourceMemory)]), nil // 找到最好的hint
 }
-
+// 是否mask中的node能满足所有请求的资源
 func isAffinitySatisfyRequest(machineState state.NUMANodeMap, mask bitmask.BitMask, requestedResources map[v1.ResourceName]uint64) bool {
 	totalFreeSize := map[v1.ResourceName]uint64{}
 	for _, nodeID := range mask.GetBits() {
@@ -761,6 +788,7 @@ func isAffinitySatisfyRequest(machineState state.NUMANodeMap, mask bitmask.BitMa
 // the topology manager uses bitwise AND to merge all topology hints into the best one, so in case of the restricted policy,
 // it possible that we will get the subset of hint that we provided to the topology manager, in this case we want to extend
 // it to the original one
+// 算出来新的Hint，老的必须是信算出来的新的的子集
 func (p *staticPolicy) extendTopologyManagerHint(machineState state.NUMANodeMap, pod *v1.Pod, requestedResources map[v1.ResourceName]uint64, mask bitmask.BitMask) (*topologymanager.TopologyHint, error) {
 	hints := p.calculateHints(machineState, pod, requestedResources)
 
@@ -769,6 +797,7 @@ func (p *staticPolicy) extendTopologyManagerHint(machineState state.NUMANodeMap,
 	for _, hint := range hints[string(v1.ResourceMemory)] {
 		affinityBits := hint.NUMANodeAffinity.GetBits()
 		// filter all hints that does not include currentHint
+		// mask是否是affinityBits子集
 		if isHintInGroup(mask.GetBits(), affinityBits) {
 			filteredHints = append(filteredHints, hint)
 		}
@@ -781,7 +810,7 @@ func (p *staticPolicy) extendTopologyManagerHint(machineState state.NUMANodeMap,
 	// try to find the preferred hint with the minimal number of NUMA nodes, relevant for the restricted policy
 	return findBestHint(filteredHints), nil
 }
-
+// hint是否是group子集
 func isHintInGroup(hint []int, group []int) bool {
 	sort.Ints(hint)
 	sort.Ints(group)
@@ -800,7 +829,7 @@ func isHintInGroup(hint []int, group []int) bool {
 
 	return hintIndex == len(hint)
 }
-
+// 找到最佳的Hint
 func findBestHint(hints []topologymanager.TopologyHint) *topologymanager.TopologyHint {
 	// try to find the preferred hint with the minimal number of NUMA nodes, relevant for the restricted policy
 	bestHint := topologymanager.TopologyHint{}
@@ -825,6 +854,7 @@ func findBestHint(hints []topologymanager.TopologyHint) *topologymanager.Topolog
 }
 
 // GetAllocatableMemory returns the amount of allocatable memory for each NUMA node
+// 获取可分配的内存
 func (p *staticPolicy) GetAllocatableMemory(s state.State) []state.Block {
 	var allocatableMemory []state.Block
 	machineState := s.GetMachineState()
@@ -844,6 +874,7 @@ func (p *staticPolicy) GetAllocatableMemory(s state.State) []state.Block {
 	}
 	return allocatableMemory
 }
+
 // 更新可复用的资源
 func (p *staticPolicy) updatePodReusableMemory(pod *v1.Pod, container *v1.Container, memoryBlocks []state.Block) {
 	podUID := string(pod.UID)
@@ -854,7 +885,7 @@ func (p *staticPolicy) updatePodReusableMemory(pod *v1.Pod, container *v1.Contai
 			delete(p.initContainersReusableMemory, podUID)
 		}
 	}
-
+   // init容器更新reuse就是添加资源
 	if isInitContainer(pod, container) {
 		if _, ok := p.initContainersReusableMemory[podUID]; !ok {
 			p.initContainersReusableMemory[podUID] = map[string]map[v1.ResourceName]uint64{}
@@ -876,6 +907,7 @@ func (p *staticPolicy) updatePodReusableMemory(pod *v1.Pod, container *v1.Contai
 		return
 	}
 
+	// app容器更新reuse就是减少资源
 	// update re-usable memory once it used by the app container
 	for _, block := range memoryBlocks {
 		blockBitMask, _ := bitmask.NewBitMask(block.NUMAAffinity...)
@@ -888,7 +920,7 @@ func (p *staticPolicy) updatePodReusableMemory(pod *v1.Pod, container *v1.Contai
 		}
 	}
 }
-
+// containerMemoryBlocks尝试占用initContainer中的资源，更新被占用的资源
 func (p *staticPolicy) updateInitContainersMemoryBlocks(s state.State, pod *v1.Pod, container *v1.Container, containerMemoryBlocks []state.Block) {
 	podUID := string(pod.UID)
 
@@ -936,6 +968,7 @@ func (p *staticPolicy) updateInitContainersMemoryBlocks(s state.State, pod *v1.P
 		}
 	}
 }
+
 // container是否是isInitContainer
 func isInitContainer(pod *v1.Pod, container *v1.Container) bool {
 	for _, initContainer := range pod.Spec.InitContainers {
@@ -946,7 +979,7 @@ func isInitContainer(pod *v1.Pod, container *v1.Container) bool {
 
 	return false
 }
-
+// 判断两个数组是否不一样
 func isNUMAAffinitiesEqual(numaAffinity1, numaAffinity2 []int) bool {
 	bitMask1, err := bitmask.NewBitMask(numaAffinity1...)
 	if err != nil {

@@ -45,7 +45,9 @@ import (
 
 	"k8s.io/klog/v2"
 )
-
+/*
+ 定义一堆函数builder，产生的函数用来修改Node.Status的各个值
+*/
 const (
 	// MaxNamesPerImageInNodeStatus is max number of names
 	// per image stored in the node status.
@@ -54,9 +56,11 @@ const (
 
 // Setter modifies the node in-place, and returns an error if the modification failed.
 // Setters may partially mutate the node before returning an error.
+// 更新node信息
 type Setter func(node *v1.Node) error
 
 // NodeAddress returns a Setter that updates address-related information on the node.
+// 更新节点的address相关的信息
 func NodeAddress(nodeIPs []net.IP, // typically Kubelet.nodeIPs
 	validateNodeIPFunc func(net.IP) error, // typically Kubelet.nodeIPValidator
 	hostname string, // typically Kubelet.hostname
@@ -71,7 +75,8 @@ func NodeAddress(nodeIPs []net.IP, // typically Kubelet.nodeIPs
 	}
 	preferIPv4 := nodeIP == nil || nodeIP.To4() != nil
 	isPreferredIPFamily := func(ip net.IP) bool { return (ip.To4() != nil) == preferIPv4 }
-	nodeIPSpecified := nodeIP != nil && !nodeIP.IsUnspecified()
+	// http://www.ipuptime.net/Loopback.aspx
+	nodeIPSpecified := nodeIP != nil && !nodeIP.IsUnspecified()  // 是否是具体的ip（不是全0ip）
 
 	if len(nodeIPs) > 1 {
 		secondaryNodeIP = nodeIPs[1]
@@ -80,6 +85,7 @@ func NodeAddress(nodeIPs []net.IP, // typically Kubelet.nodeIPs
 
 	return func(node *v1.Node) error {
 		if nodeIPSpecified {
+			// 校验ip
 			if err := validateNodeIPFunc(nodeIP); err != nil {
 				return fmt.Errorf("failed to validate nodeIP: %v", err)
 			}
@@ -252,7 +258,7 @@ func NodeAddress(nodeIPs []net.IP, // typically Kubelet.nodeIPs
 		return nil
 	}
 }
-
+// addresses中的元素有没有type是addressType的
 func hasAddressType(addresses []v1.NodeAddress, addressType v1.NodeAddressType) bool {
 	for _, address := range addresses {
 		if address.Type == addressType {
@@ -261,6 +267,7 @@ func hasAddressType(addresses []v1.NodeAddress, addressType v1.NodeAddressType) 
 	}
 	return false
 }
+// addresses中的元素有没有value是addressValue的
 func hasAddressValue(addresses []v1.NodeAddress, addressValue string) bool {
 	for _, address := range addresses {
 		if address.Address == addressValue {
@@ -271,6 +278,7 @@ func hasAddressValue(addresses []v1.NodeAddress, addressValue string) bool {
 }
 
 // MachineInfo returns a Setter that updates machine-related information on the node.
+// 更新节点机器资源相关的信息（根据函数的参数获取当前资源状态。然后更新node结构体）
 func MachineInfo(nodeName string,
 	maxPods int,
 	podsPerCore int,
@@ -304,19 +312,20 @@ func MachineInfo(nodeName string,
 		} else {
 			node.Status.NodeInfo.MachineID = info.MachineID
 			node.Status.NodeInfo.SystemUUID = info.SystemUUID
-
+            // 资源信息，cpu，mem啥的
 			for rName, rCap := range cadvisor.CapacityFromMachineInfo(info) {
 				node.Status.Capacity[rName] = rCap
 			}
 
 			if podsPerCore > 0 {
+				// pods数量
 				node.Status.Capacity[v1.ResourcePods] = *resource.NewQuantity(
 					int64(math.Min(float64(info.NumCores*podsPerCore), float64(maxPods))), resource.DecimalSI)
 			} else {
 				node.Status.Capacity[v1.ResourcePods] = *resource.NewQuantity(
 					int64(maxPods), resource.DecimalSI)
 			}
-
+            // bootid变了，代表重启过
 			if node.Status.NodeInfo.BootID != "" &&
 				node.Status.NodeInfo.BootID != info.BootID {
 				// TODO: This requires a transaction, either both node status is updated
@@ -336,7 +345,7 @@ func MachineInfo(nodeName string,
 					}
 				}
 			}
-
+            //更新设备插件资源信息
 			devicePluginCapacity, devicePluginAllocatable, removedDevicePlugins = devicePluginResourceCapacityFunc()
 			for k, v := range devicePluginCapacity {
 				if old, ok := node.Status.Capacity[k]; !ok || old.Value() != v.Value() {
@@ -365,12 +374,14 @@ func MachineInfo(nodeName string,
 		}
 		// Remove extended resources from allocatable that are no longer
 		// present in capacity.
+		// 干掉没用的拓展资源信息
 		for k := range node.Status.Allocatable {
 			_, found := node.Status.Capacity[k]
 			if !found && v1helper.IsExtendedResourceName(k) {
 				delete(node.Status.Allocatable, k)
 			}
 		}
+		// 减去保留资源
 		allocatableReservation := nodeAllocatableReservationFunc()
 		for k, v := range node.Status.Capacity {
 			value := v.DeepCopy()
@@ -408,6 +419,7 @@ func MachineInfo(nodeName string,
 }
 
 // VersionInfo returns a Setter that updates version-related information on the node.
+// 更新节点的版本相关信息
 func VersionInfo(versionInfoFunc func() (*cadvisorapiv1.VersionInfo, error), // typically Kubelet.cadvisor.VersionInfo
 	runtimeTypeFunc func() string, // typically Kubelet.containerRuntime.Type
 	runtimeVersionFunc func() (kubecontainer.Version, error), // typically Kubelet.containerRuntime.Version
@@ -435,6 +447,7 @@ func VersionInfo(versionInfoFunc func() (*cadvisorapiv1.VersionInfo, error), // 
 }
 
 // DaemonEndpoints returns a Setter that updates the daemon endpoints on the node.
+// 更新节点的 daemon endpoints信息
 func DaemonEndpoints(daemonEndpoints *v1.NodeDaemonEndpoints) Setter {
 	return func(node *v1.Node) error {
 		node.Status.DaemonEndpoints = *daemonEndpoints
@@ -445,6 +458,7 @@ func DaemonEndpoints(daemonEndpoints *v1.NodeDaemonEndpoints) Setter {
 // Images returns a Setter that updates the images on the node.
 // imageListFunc is expected to return a list of images sorted in descending order by image size.
 // nodeStatusMaxImages is ignored if set to -1.
+// 更新当前节点上的所有image镜像的信息
 func Images(nodeStatusMaxImages int32,
 	imageListFunc func() ([]kubecontainer.Image, error), // typically Kubelet.imageManager.GetImageList
 ) Setter {
@@ -482,6 +496,7 @@ func Images(nodeStatusMaxImages int32,
 }
 
 // GoRuntime returns a Setter that sets GOOS and GOARCH on the node.
+// 设置节点的GOOS和GOARCH信息
 func GoRuntime() Setter {
 	return func(node *v1.Node) error {
 		node.Status.NodeInfo.OperatingSystem = goruntime.GOOS
@@ -491,6 +506,7 @@ func GoRuntime() Setter {
 }
 
 // ReadyCondition returns a Setter that updates the v1.NodeReady condition on the node.
+// 更新Node Staus的Ready Contidion
 func ReadyCondition(
 	nowFunc func() time.Time, // typically Kubelet.clock.Now
 	runtimeErrorsFunc func() error, // typically Kubelet.runtimeState.runtimeErrors
@@ -518,6 +534,7 @@ func ReadyCondition(
 		if utilfeature.DefaultFeatureGate.Enabled(features.LocalStorageCapacityIsolation) {
 			requiredCapacities = append(requiredCapacities, v1.ResourceEphemeralStorage)
 		}
+		// 丢失的资源
 		missingCapacities := []string{}
 		for _, resource := range requiredCapacities {
 			if _, found := node.Status.Capacity[resource]; !found {
@@ -582,6 +599,7 @@ func ReadyCondition(
 }
 
 // MemoryPressureCondition returns a Setter that updates the v1.NodeMemoryPressure condition on the node.
+// 更新node Status的PressureCondition
 func MemoryPressureCondition(nowFunc func() time.Time, // typically Kubelet.clock.Now
 	pressureFunc func() bool, // typically Kubelet.evictionManager.IsUnderMemoryPressure
 	recordEventFunc func(eventType, event string), // typically Kubelet.recordNodeStatusEvent
@@ -643,6 +661,7 @@ func MemoryPressureCondition(nowFunc func() time.Time, // typically Kubelet.cloc
 }
 
 // PIDPressureCondition returns a Setter that updates the v1.NodePIDPressure condition on the node.
+// 更新node Status的PIDPressureCondition
 func PIDPressureCondition(nowFunc func() time.Time, // typically Kubelet.clock.Now
 	pressureFunc func() bool, // typically Kubelet.evictionManager.IsUnderPIDPressure
 	recordEventFunc func(eventType, event string), // typically Kubelet.recordNodeStatusEvent
@@ -704,6 +723,7 @@ func PIDPressureCondition(nowFunc func() time.Time, // typically Kubelet.clock.N
 }
 
 // DiskPressureCondition returns a Setter that updates the v1.NodeDiskPressure condition on the node.
+// 更新node Status的DiskPressureCondition
 func DiskPressureCondition(nowFunc func() time.Time, // typically Kubelet.clock.Now
 	pressureFunc func() bool, // typically Kubelet.evictionManager.IsUnderDiskPressure
 	recordEventFunc func(eventType, event string), // typically Kubelet.recordNodeStatusEvent
@@ -765,6 +785,7 @@ func DiskPressureCondition(nowFunc func() time.Time, // typically Kubelet.clock.
 }
 
 // VolumesInUse returns a Setter that updates the volumes in use on the node.
+// 更新node status的VolumesInUse
 func VolumesInUse(syncedFunc func() bool, // typically Kubelet.volumeManager.ReconcilerStatesHasBeenSynced
 	volumesInUseFunc func() []v1.UniqueVolumeName, // typically Kubelet.volumeManager.GetVolumesInUse
 ) Setter {
@@ -778,6 +799,7 @@ func VolumesInUse(syncedFunc func() bool, // typically Kubelet.volumeManager.Rec
 }
 
 // VolumeLimits returns a Setter that updates the volume limits on the node.
+// 更新Status volume资源
 func VolumeLimits(volumePluginListFunc func() []volume.VolumePluginWithAttachLimits, // typically Kubelet.volumePluginMgr.ListVolumePluginWithLimits
 ) Setter {
 	return func(node *v1.Node) error {

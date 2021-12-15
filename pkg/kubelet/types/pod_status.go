@@ -29,6 +29,7 @@ var PodConditionsByKubelet = []v1.PodConditionType{
 }
 
 // PodConditionByKubelet returns if the pod condition type is owned by kubelet
+// 是否是内置PodConditionType
 func PodConditionByKubelet(conditionType v1.PodConditionType) bool {
 	for _, c := range PodConditionsByKubelet {
 		if c == conditionType {

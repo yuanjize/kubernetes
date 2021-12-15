@@ -30,6 +30,8 @@ import (
 )
 
 // PatchPodStatus patches pod status. It returns true and avoids an update if the patch contains no changes.
+// 通过APIServer给来的Pod打Patch
+// 第一个返回值是apiserver patch之后的Pod，第二个单数是新老PoaStatus的jsonPatch，第三个参数是新老Podstatus是否有变化
 func PatchPodStatus(c clientset.Interface, namespace, name string, uid types.UID, oldPodStatus, newPodStatus v1.PodStatus) (*v1.Pod, []byte, bool, error) {
 	patchBytes, unchanged, err := preparePatchBytesForPodStatus(namespace, name, uid, oldPodStatus, newPodStatus)
 	if err != nil {
@@ -45,7 +47,7 @@ func PatchPodStatus(c clientset.Interface, namespace, name string, uid types.UID
 	}
 	return updatedPod, patchBytes, false, nil
 }
-
+// 比较两个PodStatus是否有变化，并生生patch。第二个参数代表是否有变化
 func preparePatchBytesForPodStatus(namespace, name string, uid types.UID, oldPodStatus, newPodStatus v1.PodStatus) ([]byte, bool, error) {
 	oldData, err := json.Marshal(v1.Pod{
 		Status: oldPodStatus,

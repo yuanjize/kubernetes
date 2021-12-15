@@ -31,7 +31,7 @@ import (
 	pluginapi "k8s.io/kubelet/pkg/apis/deviceplugin/v1beta1"
 	watcherapi "k8s.io/kubelet/pkg/apis/pluginregistration/v1"
 )
-
+// 测试用的，不关注
 // Stub implementation for DevicePlugin.
 type Stub struct {
 	devs                       []*pluginapi.Device

@@ -26,16 +26,22 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/cm/devicemanager/checkpoint"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 )
+/*
+podDevices主要缓存了给pod/container分配的设备资源和id信息
+*/
 
 type deviceAllocateInfo struct {
 	// deviceIds contains device Ids allocated to this container for the given resourceName.
+	// 分配给该容器的指定资源的设备id
 	deviceIds checkpoint.DevicesPerNUMA
 	// allocResp contains cached rpc AllocateResponse.
+	// 缓存的AllocateResponse
 	allocResp *pluginapi.ContainerAllocateResponse
 }
 
-type resourceAllocateInfo map[string]deviceAllocateInfo // Keyed by resourceName.
-type containerDevices map[string]resourceAllocateInfo   // Keyed by containerName.
+type resourceAllocateInfo map[string]deviceAllocateInfo // Keyed by resourceName. key是资源类型
+type containerDevices map[string]resourceAllocateInfo   // Keyed by containerName. key是容器名字
+// Pod中每个容器分配的一个 containerDevices
 type podDevices struct {
 	sync.RWMutex
 	devs map[string]containerDevices // Keyed by podUID.
@@ -47,7 +53,7 @@ type podDevices struct {
 func newPodDevices() *podDevices {
 	return &podDevices{devs: make(map[string]containerDevices)}
 }
-
+// 返回所有的podUID
 func (pdev *podDevices) pods() sets.String {
 	pdev.RLock()
 	defer pdev.RUnlock()
@@ -57,20 +63,20 @@ func (pdev *podDevices) pods() sets.String {
 	}
 	return ret
 }
-
+// Pod个数
 func (pdev *podDevices) size() int {
 	pdev.RLock()
 	defer pdev.RUnlock()
 	return len(pdev.devs)
 }
-
+// 是否缓存了该pod的device分配情况
 func (pdev *podDevices) hasPod(podUID string) bool {
 	pdev.RLock()
 	defer pdev.RUnlock()
 	_, podExists := pdev.devs[podUID]
 	return podExists
 }
-
+// 插入信息
 func (pdev *podDevices) insert(podUID, contName, resource string, devices checkpoint.DevicesPerNUMA, resp *pluginapi.ContainerAllocateResponse) {
 	pdev.Lock()
 	defer pdev.Unlock()
@@ -85,7 +91,7 @@ func (pdev *podDevices) insert(podUID, contName, resource string, devices checkp
 		allocResp: resp,
 	}
 }
-
+// 批量删除pod信息
 func (pdev *podDevices) delete(pods []string) {
 	pdev.Lock()
 	defer pdev.Unlock()
@@ -96,6 +102,7 @@ func (pdev *podDevices) delete(pods []string) {
 
 // Returns list of device Ids allocated to the given pod for the given resource.
 // Returns nil if we don't have cached state for the given <podUID, resource>.
+// 返回pod下面所有容器的该资源的所有设备id
 func (pdev *podDevices) podDevices(podUID, resource string) sets.String {
 	pdev.RLock()
 	defer pdev.RUnlock()
@@ -109,6 +116,7 @@ func (pdev *podDevices) podDevices(podUID, resource string) sets.String {
 
 // Returns list of device Ids allocated to the given container for the given resource.
 // Returns nil if we don't have cached state for the given <podUID, contName, resource>.
+// 返回容器被分配的对应的资源的所有设备id
 func (pdev *podDevices) containerDevices(podUID, contName, resource string) sets.String {
 	pdev.RLock()
 	defer pdev.RUnlock()
@@ -126,6 +134,7 @@ func (pdev *podDevices) containerDevices(podUID, contName, resource string) sets
 }
 
 // Populates allocatedResources with the device resources allocated to the specified <podUID, contName>.
+// 分配给<podUID, contName>的资源加到allocatedResources中
 func (pdev *podDevices) addContainerAllocatedResources(podUID, contName string, allocatedResources map[string]sets.String) {
 	pdev.RLock()
 	defer pdev.RUnlock()
@@ -143,6 +152,7 @@ func (pdev *podDevices) addContainerAllocatedResources(podUID, contName string, 
 }
 
 // Removes the device resources allocated to the specified <podUID, contName> from allocatedResources.
+// 从allocatedResources去掉分配给<podUID, contName>的资源
 func (pdev *podDevices) removeContainerAllocatedResources(podUID, contName string, allocatedResources map[string]sets.String) {
 	pdev.RLock()
 	defer pdev.RUnlock()
@@ -160,6 +170,7 @@ func (pdev *podDevices) removeContainerAllocatedResources(podUID, contName strin
 }
 
 // Returns all of devices allocated to the pods being tracked, keyed by resourceName.
+// 返回所有track的已经被分配的资源，key是资源名
 func (pdev *podDevices) devices() map[string]sets.String {
 	ret := make(map[string]sets.String)
 	pdev.RLock()
@@ -180,6 +191,7 @@ func (pdev *podDevices) devices() map[string]sets.String {
 }
 
 // Turns podDevices to checkpointData.
+// 内部状态转换成checkpoint结构体
 func (pdev *podDevices) toCheckpointData() []checkpoint.PodDevicesEntry {
 	var data []checkpoint.PodDevicesEntry
 	pdev.RLock()
@@ -210,6 +222,7 @@ func (pdev *podDevices) toCheckpointData() []checkpoint.PodDevicesEntry {
 }
 
 // Populates podDevices from the passed in checkpointData.
+// 把checkpoint数据转换为内部状态
 func (pdev *podDevices) fromCheckpointData(data []checkpoint.PodDevicesEntry) {
 	for _, entry := range data {
 		klog.V(2).InfoS("Get checkpoint entry",
@@ -226,6 +239,7 @@ func (pdev *podDevices) fromCheckpointData(data []checkpoint.PodDevicesEntry) {
 }
 
 // Returns combined container runtime settings to consume the container's allocated devices.
+// 从allocResp中倒出DeviceRunContainerOptions 返回组合容器运行时设置以使用容器分配的设备
 func (pdev *podDevices) deviceRunContainerOptions(podUID, contName string) *DeviceRunContainerOptions {
 	pdev.RLock()
 	defer pdev.RUnlock()
@@ -326,6 +340,7 @@ func (pdev *podDevices) deviceRunContainerOptions(podUID, contName string) *Devi
 }
 
 // getContainerDevices returns the devices assigned to the provided container for all ResourceNames
+// 返回被分配到容器的：资源-设备id-设备
 func (pdev *podDevices) getContainerDevices(podUID, contName string) ResourceDeviceInstances {
 	pdev.RLock()
 	defer pdev.RUnlock()
@@ -354,7 +369,7 @@ func (pdev *podDevices) getContainerDevices(podUID, contName string) ResourceDev
 				devicePluginMap[devId] = pluginapi.Device{
 					// ID and Healthy are not relevant here.
 					Topology: &pluginapi.TopologyInfo{
-						Nodes: NUMANodes,
+						Nodes: NUMANodes,  // 所有的包含该设备的numa nodeid
 					},
 				}
 			}
@@ -365,9 +380,11 @@ func (pdev *podDevices) getContainerDevices(podUID, contName string) ResourceDev
 }
 
 // DeviceInstances is a mapping device name -> plugin device data
+// 设备名->设备id
 type DeviceInstances map[string]pluginapi.Device
 
 // ResourceDeviceInstances is a mapping resource name -> DeviceInstances
+// 资源名->设备名->设备id
 type ResourceDeviceInstances map[string]DeviceInstances
 
 func NewResourceDeviceInstances() ResourceDeviceInstances {

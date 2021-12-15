@@ -44,7 +44,7 @@ type NUMANodeState struct {
 	// This parameter indicates if the current node is used for the multiple NUMA node memory allocation
 	// For example if some container has pinning 0,1,2, NUMA nodes 0,1,2 under the state will have
 	// this parameter equals to [0, 1, 2]
-	Cells []int `json:"cells"`
+	Cells []int `json:"cells"`  // 该node是否属于某个组，这个数组是所属组的其他节点
 }
 
 // NUMANodeMap contains memory information for each NUMA node.
@@ -85,9 +85,9 @@ func (nm NUMANodeMap) Clone() NUMANodeMap {
 // Block is a data structure used to represent a certain amount of memory
 type Block struct {
 	// NUMAAffinity contains the string that represents NUMA affinity bitmask
-	NUMAAffinity []int           `json:"numaAffinity"`
-	Type         v1.ResourceName `json:"type"`
-	Size         uint64          `json:"size"`
+	NUMAAffinity []int           `json:"numaAffinity"`// 用了哪几个node，这里有node group的概念。具体看KEP
+	Type         v1.ResourceName `json:"type"`  //申请的资源类型
+	Size         uint64          `json:"size"`//申请的资源大小
 }
 
 // ContainerMemoryAssignments stores memory assignments of containers

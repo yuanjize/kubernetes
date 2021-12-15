@@ -33,10 +33,17 @@ import (
 	utilio "k8s.io/utils/io"
 )
 
+/*
+handlerRunner
+*/
 const (
 	maxRespBodyLength = 10 * 1 << 10 // 10KB
 )
 
+/*
+ 定义了一个runner用来执行容器的生命周期钩子函数（http/cmd）
+  还定义了一些Pod准入器，这个可以不看，都是跟安全相关的
+*/
 type handlerRunner struct {
 	httpGetter       kubetypes.HTTPGetter
 	commandRunner    kubecontainer.CommandRunner
@@ -56,6 +63,7 @@ func NewHandlerRunner(httpGetter kubetypes.HTTPGetter, commandRunner kubecontain
 	}
 }
 
+// 运行生命周期的Hook Handler
 func (hr *handlerRunner) Run(containerID kubecontainer.ContainerID, pod *v1.Pod, container *v1.Container, handler *v1.Handler) (string, error) {
 	switch {
 	case handler.Exec != nil:
@@ -88,6 +96,7 @@ func (hr *handlerRunner) Run(containerID kubecontainer.ContainerID, pod *v1.Pod,
 // an attempt is made to find a port with the same name in the container spec.
 // If a port with the same name is found, it's ContainerPort value is returned.  If no matching
 // port is found, an error is returned.
+// 获取端口
 func resolvePort(portReference intstr.IntOrString, container *v1.Container) (int, error) {
 	if portReference.Type == intstr.Int {
 		return portReference.IntValue(), nil
@@ -105,6 +114,7 @@ func resolvePort(portReference intstr.IntOrString, container *v1.Container) (int
 	return -1, fmt.Errorf("couldn't find port: %v in %v", portReference, container)
 }
 
+// 发http请求
 func (hr *handlerRunner) runHTTPHandler(pod *v1.Pod, container *v1.Container, handler *v1.Handler) (string, error) {
 	host := handler.HTTPGet.Host
 	if len(host) == 0 {
@@ -119,6 +129,7 @@ func (hr *handlerRunner) runHTTPHandler(pod *v1.Pod, container *v1.Container, ha
 		host = status.IPs[0]
 	}
 	var port int
+	// 默认80端口
 	if handler.HTTPGet.Port.Type == intstr.String && len(handler.HTTPGet.Port.StrVal) == 0 {
 		port = 80
 	} else {
@@ -133,6 +144,7 @@ func (hr *handlerRunner) runHTTPHandler(pod *v1.Pod, container *v1.Container, ha
 	return getHTTPRespBody(resp), err
 }
 
+// 读response payload
 func getHTTPRespBody(resp *http.Response) string {
 	if resp == nil {
 		return ""
@@ -147,6 +159,7 @@ func getHTTPRespBody(resp *http.Response) string {
 
 // NewAppArmorAdmitHandler returns a PodAdmitHandler which is used to evaluate
 // if a pod can be admitted from the perspective of AppArmor.
+// api安全检查相关的准入器
 func NewAppArmorAdmitHandler(validator apparmor.Validator) PodAdmitHandler {
 	return &appArmorAdmitHandler{
 		Validator: validator,
@@ -176,6 +189,7 @@ func (a *appArmorAdmitHandler) Admit(attrs *PodAdmitAttributes) PodAdmitResult {
 
 // NewNoNewPrivsAdmitHandler returns a PodAdmitHandler which is used to evaluate
 // if a pod can be admitted from the perspective of NoNewPrivs.
+// dockerapi检查准入器
 func NewNoNewPrivsAdmitHandler(runtime kubecontainer.Runtime) PodAdmitHandler {
 	return &noNewPrivsAdmitHandler{
 		Runtime: runtime,
@@ -243,6 +257,7 @@ func noNewPrivsRequired(pod *v1.Pod) bool {
 
 // NewProcMountAdmitHandler returns a PodAdmitHandler which is used to evaluate
 // if a pod can be admitted from the perspective of ProcMount.
+// 也是安全相关的pod准入器
 func NewProcMountAdmitHandler(runtime kubecontainer.Runtime) PodAdmitHandler {
 	return &procMountAdmitHandler{
 		Runtime: runtime,

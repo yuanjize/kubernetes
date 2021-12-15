@@ -20,7 +20,7 @@ import (
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
-
+// podContainerManager接口的空实现，忽略
 type podContainerManagerStub struct {
 }
 

@@ -37,6 +37,7 @@ const (
 // multiplied by 10 (barring exceptional cases) + a configurable quantity which is between -1000
 // and 1000. Containers with higher OOM scores are killed if the system runs out of memory.
 // See https://lwn.net/Articles/391222/ for more information.
+// 为容器计算OOMScore，这个值是用来给oom进程算分用的，分数越高内存不够用的时候越容易被杀死
 func GetContainerOOMScoreAdjust(pod *v1.Pod, container *v1.Container, memoryCapacity int64) int {
 	if types.IsNodeCriticalPod(pod) {
 		// Only node critical pod should be the last to get killed.
@@ -60,7 +61,7 @@ func GetContainerOOMScoreAdjust(pod *v1.Pod, container *v1.Container, memoryCapa
 	// targets for OOM kills.
 	// Note that this is a heuristic, it won't work if a container has many small processes.
 	memoryRequest := container.Resources.Requests.Memory().Value()
-	oomScoreAdjust := 1000 - (1000*memoryRequest)/memoryCapacity
+	oomScoreAdjust := 1000 - (1000*memoryRequest)/memoryCapacity  // 申请的资源越多越不容器被oom kill
 	// A guaranteed pod using 100% of memory can have an OOM score of 10. Ensure
 	// that burstable pods have a higher OOM score adjustment.
 	if int(oomScoreAdjust) < (1000 + guaranteedOOMScoreAdj) {

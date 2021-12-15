@@ -71,7 +71,11 @@ import (
 	"k8s.io/kubernetes/pkg/util/procfs"
 	utilsysctl "k8s.io/kubernetes/pkg/util/sysctl"
 )
-
+/*
+这个包的核心：
+   1.所有的NUMA对齐，cpu/memory/device manager都是由这个类start的
+   2.所有cgroup相关，例如system reverse级别/qos级别/pod级别的cgroup也都是由这个类实现的
+*/
 const (
 	dockerProcessName = "dockerd"
 	// dockerd option --pidfile can specify path to use for daemon PID file, pid file path is default "/var/run/docker.pid"
@@ -86,6 +90,7 @@ var (
 )
 
 // A non-user container tracked by the Kubelet.
+// 用来给kubelet追踪非用户容器
 type systemContainer struct {
 	// Absolute name of the container.
 	name string
@@ -95,12 +100,14 @@ type systemContainer struct {
 
 	// Function that ensures the state of the container.
 	// m is the cgroup manager for the specified container.
+	// 确认容器状态的函数
 	ensureStateFunc func(m cgroups.Manager) error
 
 	// Manager for the cgroups of the external container.
 	manager cgroups.Manager
 }
 
+// 根据containerName创建CgroupManager
 func newSystemCgroups(containerName string) (*systemContainer, error) {
 	manager, err := createManager(containerName)
 	if err != nil {
@@ -115,37 +122,37 @@ func newSystemCgroups(containerName string) (*systemContainer, error) {
 type containerManagerImpl struct {
 	sync.RWMutex
 	cadvisorInterface cadvisor.Interface
-	mountUtil         mount.Interface
+	mountUtil         mount.Interface // 挂载操作
 	NodeConfig
 	status Status
 	// External containers being managed.
-	systemContainers []*systemContainer
+	systemContainers []*systemContainer // systemCgroup和kebelet Cgroup会放在这里面进行管理，里面有一些定时任务
 	// Tasks that are run periodically
-	periodicTasks []func()
+	periodicTasks []func() // 定时任务
 	// Holds all the mounted cgroup subsystems
-	subsystems *CgroupSubsystems
+	subsystems *CgroupSubsystems // 节点挂载信息
 	nodeInfo   *v1.Node
 	// Interface for cgroup management
-	cgroupManager CgroupManager
+	cgroupManager CgroupManager // 实际操作cgroup的
 	// Capacity of this node.
-	capacity v1.ResourceList
+	capacity v1.ResourceList // 节点可用资源
 	// Capacity of this node, including internal resources.
-	internalCapacity v1.ResourceList
+	internalCapacity v1.ResourceList // 节点可用资源
 	// Absolute cgroupfs path to a cgroup that Kubelet needs to place all pods under.
 	// This path include a top level container for enforcing Node Allocatable.
-	cgroupRoot CgroupName
+	cgroupRoot CgroupName // cgroup跟节点
 	// Event recorder interface.
 	recorder record.EventRecorder
 	// Interface for QoS cgroup management
-	qosContainerManager QOSContainerManager
+	qosContainerManager QOSContainerManager // qos级别的容器管理
 	// Interface for exporting and allocating devices reported by device plugins.
-	deviceManager devicemanager.Manager
+	deviceManager devicemanager.Manager // 设备插件manager
 	// Interface for CPU affinity management.
-	cpuManager cpumanager.Manager
+	cpuManager cpumanager.Manager // cpu manager
 	// Interface for memory affinity management.
-	memoryManager memorymanager.Manager
+	memoryManager memorymanager.Manager // 内存manager
 	// Interface for Topology resource co-ordination
-	topologyManager topologymanager.Manager
+	topologyManager topologymanager.Manager // NUMA拓扑感知manager
 }
 
 type features struct {
@@ -157,13 +164,14 @@ var _ ContainerManager = &containerManagerImpl{}
 // checks if the required cgroups subsystems are mounted.
 // As of now, only 'cpu' and 'memory' are required.
 // cpu quota is a soft requirement.
+// 确保 "cpu", "cpuacct", "cpuset", "memory"已经被挂载，返回cpuHardcapping
 func validateSystemRequirements(mountUtil mount.Interface) (features, error) {
 	const (
 		cgroupMountType = "cgroup"
 		localErr        = "system validation failed"
 	)
 	var (
-		cpuMountPoint string
+		cpuMountPoint string // cpu cgroup 挂载点
 		f             features
 	)
 	mountPoints, err := mountUtil.List()
@@ -213,12 +221,13 @@ func validateSystemRequirements(mountUtil mount.Interface) (features, error) {
 // TODO(vmarmol): Add limits to the system containers.
 // Takes the absolute name of the specified containers.
 // Empty container name disables use of the specified container.
+// 初始化内部的各种结构
 func NewContainerManager(mountUtil mount.Interface, cadvisorInterface cadvisor.Interface, nodeConfig NodeConfig, failSwapOn bool, devicePluginEnabled bool, recorder record.EventRecorder) (ContainerManager, error) {
-	subsystems, err := GetCgroupSubsystems()
+	subsystems, err := GetCgroupSubsystems() // 获取cgroup挂载信息
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mounted cgroup subsystems: %v", err)
 	}
-
+	// 如果swap开启了，那么kebulet退出
 	if failSwapOn {
 		// Check whether swap is enabled. The Kubelet does not support running with swap enabled.
 		swapFile := "/proc/swaps"
@@ -235,7 +244,7 @@ func NewContainerManager(mountUtil mount.Interface, cadvisorInterface cadvisor.I
 
 			// If there is more than one line (table headers) in /proc/swaps, swap is enabled and we should
 			// error out unless --fail-swap-on is set to false.
-			if len(swapLines) > 1 {
+			if len(swapLines) > 1 { // 认为swap开启
 				return nil, fmt.Errorf("running with swap on is not supported, please disable swap! or set --fail-swap-on flag to false. /proc/swaps contained: %v", swapLines)
 			}
 		}
@@ -249,10 +258,12 @@ func NewContainerManager(mountUtil mount.Interface, cadvisorInterface cadvisor.I
 	if err != nil {
 		return nil, err
 	}
+	// 获取内存/hugepage/cpu资源信息
 	capacity := cadvisor.CapacityFromMachineInfo(machineInfo)
 	for k, v := range capacity {
 		internalCapacity[k] = v
 	}
+	// 获取当前进程数和最大进程数到资源了列表中
 	pidlimits, err := pidlimit.Stats()
 	if err == nil && pidlimits != nil && pidlimits.MaxPID != nil {
 		internalCapacity[pidlimit.PIDs] = *resource.NewQuantity(
@@ -261,7 +272,9 @@ func NewContainerManager(mountUtil mount.Interface, cadvisorInterface cadvisor.I
 	}
 
 	// Turn CgroupRoot from a string (in cgroupfs path format) to internal CgroupName
+	// nodeConfig.CgroupRoot 转换为cgroupName
 	cgroupRoot := ParseCgroupfsToCgroupName(nodeConfig.CgroupRoot)
+	// 创建cgroupManger，这个是实际对cgroup进行增删改查的
 	cgroupManager := NewCgroupManager(subsystems, nodeConfig.CgroupDriver)
 	// Check if Cgroup-root actually exists on the node
 	if nodeConfig.CgroupsPerQOS {
@@ -272,7 +285,7 @@ func NewContainerManager(mountUtil mount.Interface, cadvisorInterface cadvisor.I
 
 		// we need to check that the cgroup root actually exists for each subsystem
 		// of note, we always use the cgroupfs driver when performing this check since
-		// the input is provided in that format.
+		// the input is provided in that format.z
 		// this is important because we do not want any name conversion to occur.
 		if !cgroupManager.Exists(cgroupRoot) {
 			return nil, fmt.Errorf("invalid configuration: cgroup-root %q doesn't exist", cgroupRoot)
@@ -283,7 +296,7 @@ func NewContainerManager(mountUtil mount.Interface, cadvisorInterface cadvisor.I
 		cgroupRoot = NewCgroupName(cgroupRoot, defaultNodeAllocatableCgroupName)
 	}
 	klog.InfoS("Creating Container Manager object based on Node Config", "nodeConfig", nodeConfig)
-
+	// 创建qos级别的cgroup manager
 	qosContainerManager, err := NewQOSContainerManager(subsystems, cgroupRoot, nodeConfig, cgroupManager)
 	if err != nil {
 		return nil, err
@@ -302,6 +315,7 @@ func NewContainerManager(mountUtil mount.Interface, cadvisorInterface cadvisor.I
 		qosContainerManager: qosContainerManager,
 	}
 
+	// 创建NUMA 拓扑manager
 	if utilfeature.DefaultFeatureGate.Enabled(kubefeatures.TopologyManager) {
 		cm.topologyManager, err = topologymanager.NewManager(
 			machineInfo.Topology,
@@ -318,6 +332,7 @@ func NewContainerManager(mountUtil mount.Interface, cadvisorInterface cadvisor.I
 	}
 
 	klog.InfoS("Creating device plugin manager", "devicePluginEnabled", devicePluginEnabled)
+	// 初始化设备插件manager
 	if devicePluginEnabled {
 		cm.deviceManager, err = devicemanager.NewManagerImpl(machineInfo.Topology, cm.topologyManager)
 		cm.topologyManager.AddHintProvider(cm.deviceManager)
@@ -329,6 +344,7 @@ func NewContainerManager(mountUtil mount.Interface, cadvisorInterface cadvisor.I
 	}
 
 	// Initialize CPU manager
+	// 初始化CPUmanager
 	if utilfeature.DefaultFeatureGate.Enabled(kubefeatures.CPUManager) {
 		cm.cpuManager, err = cpumanager.NewManager(
 			nodeConfig.ExperimentalCPUManagerPolicy,
@@ -346,7 +362,7 @@ func NewContainerManager(mountUtil mount.Interface, cadvisorInterface cadvisor.I
 		}
 		cm.topologyManager.AddHintProvider(cm.cpuManager)
 	}
-
+	// 初始化内存manager
 	if utilfeature.DefaultFeatureGate.Enabled(kubefeatures.MemoryManager) {
 		cm.memoryManager, err = memorymanager.NewManager(
 			nodeConfig.ExperimentalMemoryManagerPolicy,
@@ -369,6 +385,7 @@ func NewContainerManager(mountUtil mount.Interface, cadvisorInterface cadvisor.I
 // NewPodContainerManager is a factory method returns a PodContainerManager object
 // If qosCgroups are enabled then it returns the general pod container manager
 // otherwise it returns a no-op manager which essentially does nothing
+// 返回pod级别的cgroup管理器
 func (cm *containerManagerImpl) NewPodContainerManager() PodContainerManager {
 	if cm.NodeConfig.CgroupsPerQOS {
 		return &podContainerManagerImpl{
@@ -384,12 +401,13 @@ func (cm *containerManagerImpl) NewPodContainerManager() PodContainerManager {
 		cgroupRoot: cm.cgroupRoot,
 	}
 }
-
+// 返回容器生命周期回调函数
 func (cm *containerManagerImpl) InternalContainerLifecycle() InternalContainerLifecycle {
 	return &internalContainerLifecycleImpl{cm.cpuManager, cm.memoryManager, cm.topologyManager}
 }
 
 // Create a cgroup container manager.
+// 创建CgroupManager
 func createManager(containerName string) (cgroups.Manager, error) {
 	cg := &configs.Cgroup{
 		Parent: "/",
@@ -416,6 +434,7 @@ const (
 
 // setupKernelTunables validates kernel tunable flags are set as expected
 // depending upon the specified option, it will either warn, error, or modify the kernel tunable flags
+// 验证一些系统值是否符合预期，根据KernelTunableBehavior对于不同的值会有不同的行为
 func setupKernelTunables(option KernelTunableBehavior) error {
 	desiredState := map[string]int{
 		utilsysctl.VMOvercommitMemory: utilsysctl.VMOvercommitMemoryAlways,
@@ -462,8 +481,9 @@ func setupKernelTunables(option KernelTunableBehavior) error {
 	return utilerrors.NewAggregate(errList)
 }
 
+// 填充 systemContainers结构，确保系统一些属性设置正确，qosContainerManager Start
 func (cm *containerManagerImpl) setupNode(activePods ActivePodsFunc) error {
-	f, err := validateSystemRequirements(cm.mountUtil)
+	f, err := validateSystemRequirements(cm.mountUtil) // 确保子系统已经被挂载
 	if err != nil {
 		return err
 	}
@@ -472,13 +492,15 @@ func (cm *containerManagerImpl) setupNode(activePods ActivePodsFunc) error {
 	}
 	b := KernelTunableModify
 	if cm.GetNodeConfig().ProtectKernelDefaults {
-		b = KernelTunableError
+		b = KernelTunableError // 不会有写动作
 	}
+	// 确保系统的一些值设置的没有问题
 	if err := setupKernelTunables(b); err != nil {
 		return err
 	}
 
 	// Setup top level qos containers only if CgroupsPerQOS flag is specified as true
+	// 如果支持CgroupsPerQOS 1.创建根cgroup 2.qosContainerManager开始创建qos级别的cgroup并定时更新cgroup参数
 	if cm.NodeConfig.CgroupsPerQOS {
 		if err := cm.createNodeAllocatableCgroups(); err != nil {
 			return err
@@ -490,11 +512,17 @@ func (cm *containerManagerImpl) setupNode(activePods ActivePodsFunc) error {
 	}
 
 	// Enforce Node Allocatable (if required)
+	/*
+	  定时更新root cgroup的limit
+	  更新SystemReservedCgroup 的limit
+	  更新KubeReservedCgroup 的limit
+	*/
 	if err := cm.enforceNodeAllocatableCgroups(); err != nil {
 		return err
 	}
 
 	systemContainers := []*systemContainer{}
+	// 定时更新 docker守护进程对应的cgroupName
 	if cm.ContainerRuntime == "docker" {
 		// With the docker-CRI integration, dockershim manages the cgroups
 		// and oom score for the docker processes.
@@ -522,6 +550,7 @@ func (cm *containerManagerImpl) setupNode(activePods ActivePodsFunc) error {
 		if err != nil {
 			return err
 		}
+		//检索/下的所有pid，把非内核进程放到manager（SystemCgroupsName）的cgroup下面
 		cont.ensureStateFunc = func(manager cgroups.Manager) error {
 			return ensureSystemCgroups("/", manager)
 		}
@@ -533,13 +562,14 @@ func (cm *containerManagerImpl) setupNode(activePods ActivePodsFunc) error {
 		if err != nil {
 			return err
 		}
-
+		// 设置kubelete进程自己的的cgroup为manager的cgroup（KubeletCgroupsName），更新pid进程的oomScoreAdj
 		cont.ensureStateFunc = func(_ cgroups.Manager) error {
 			return ensureProcessInContainerWithOOMScore(os.Getpid(), qos.KubeletOOMScoreAdj, cont.manager)
 		}
 		systemContainers = append(systemContainers, cont)
 	} else {
 		cm.periodicTasks = append(cm.periodicTasks, func() {
+			// 更新KubeletCgroupsName
 			if err := ensureProcessInContainerWithOOMScore(os.Getpid(), qos.KubeletOOMScoreAdj, nil); err != nil {
 				klog.ErrorS(err, "Failed to ensure process in container with oom score")
 				return
@@ -560,6 +590,7 @@ func (cm *containerManagerImpl) setupNode(activePods ActivePodsFunc) error {
 	return nil
 }
 
+// 返回进程对应的cgroupName
 func getContainerNameForProcess(name, pidFile string) (string, error) {
 	pids, err := getPidsForProcess(name, pidFile)
 	if err != nil {
@@ -575,6 +606,7 @@ func getContainerNameForProcess(name, pidFile string) (string, error) {
 	return cont, nil
 }
 
+// GetNodeConfig 获取NodeConfig
 func (cm *containerManagerImpl) GetNodeConfig() NodeConfig {
 	cm.RLock()
 	defer cm.RUnlock()
@@ -582,18 +614,22 @@ func (cm *containerManagerImpl) GetNodeConfig() NodeConfig {
 }
 
 // GetPodCgroupRoot returns the literal cgroupfs value for the cgroup containing all pods.
+// 获取cgroupName
 func (cm *containerManagerImpl) GetPodCgroupRoot() string {
 	return cm.cgroupManager.Name(cm.cgroupRoot)
 }
 
+// GetMountedSubsystems 所有挂载的子系统
 func (cm *containerManagerImpl) GetMountedSubsystems() *CgroupSubsystems {
 	return cm.subsystems
 }
 
+// 获取qos级别的cgroup名字
 func (cm *containerManagerImpl) GetQOSContainersInfo() QOSContainersInfo {
 	return cm.qosContainerManager.GetQOSContainersInfo()
 }
 
+// 更新qos级别的cgroup
 func (cm *containerManagerImpl) UpdateQOSCgroups() error {
 	return cm.qosContainerManager.UpdateCgroups()
 }
@@ -604,6 +640,12 @@ func (cm *containerManagerImpl) Status() Status {
 	return cm.status
 }
 
+/*
+启动containerManager
+     启动 cpuManager，memoryManger，deviceManager
+     初始化节点
+     启动定时任务
+*/
 func (cm *containerManagerImpl) Start(node *v1.Node,
 	activePods ActivePodsFunc,
 	sourcesReady config.SourcesReady,
@@ -649,11 +691,13 @@ func (cm *containerManagerImpl) Start(node *v1.Node,
 	}
 
 	// Ensure that node allocatable configuration is valid.
+	// 资源分配是否合理
 	if err := cm.validateNodeAllocatable(); err != nil {
 		return err
 	}
 
 	// Setup the node
+	// 初始化node
 	if err := cm.setupNode(activePods); err != nil {
 		return err
 	}
@@ -666,6 +710,7 @@ func (cm *containerManagerImpl) Start(node *v1.Node,
 			break
 		}
 	}
+	// 定时调用systemContainers的ensureStateFunc
 	if hasEnsureStateFuncs {
 		// Run ensure state functions every minute.
 		go wait.Until(func() {
@@ -679,7 +724,7 @@ func (cm *containerManagerImpl) Start(node *v1.Node,
 		}, time.Minute, wait.NeverStop)
 
 	}
-
+	// 定时调用任务
 	if len(cm.periodicTasks) > 0 {
 		go wait.Until(func() {
 			for _, task := range cm.periodicTasks {
@@ -703,6 +748,7 @@ func (cm *containerManagerImpl) GetPluginRegistrationHandler() cache.PluginHandl
 }
 
 // TODO: move the GetResources logic to PodContainerManager.
+// 获取RunContainerOptions
 func (cm *containerManagerImpl) GetResources(pod *v1.Pod, container *v1.Container) (*kubecontainer.RunContainerOptions, error) {
 	opts := &kubecontainer.RunContainerOptions{}
 	// Allocate should already be called during predicateAdmitHandler.Admit(),
@@ -723,7 +769,7 @@ func (cm *containerManagerImpl) GetResources(pod *v1.Pod, container *v1.Containe
 func (cm *containerManagerImpl) UpdatePluginResources(node *schedulerframework.NodeInfo, attrs *lifecycle.PodAdmitAttributes) error {
 	return cm.deviceManager.UpdatePluginResources(node, attrs)
 }
-
+// GetAllocateResourcesPodAdmitHandler获取pod准入器
 func (cm *containerManagerImpl) GetAllocateResourcesPodAdmitHandler() lifecycle.PodAdmitHandler {
 	if utilfeature.DefaultFeatureGate.Enabled(kubefeatures.TopologyManager) {
 		return cm.topologyManager
@@ -737,6 +783,7 @@ func (cm *containerManagerImpl) GetAllocateResourcesPodAdmitHandler() lifecycle.
 	return &resourceAllocator{cm.cpuManager, cm.memoryManager, cm.deviceManager}
 }
 
+// 实现了PodAdmitHandler接口，就是挨个容器分配device/cpu/device资源
 type resourceAllocator struct {
 	cpuManager    cpumanager.Manager
 	memoryManager memorymanager.Manager
@@ -769,7 +816,7 @@ func (m *resourceAllocator) Admit(attrs *lifecycle.PodAdmitAttributes) lifecycle
 
 	return admission.GetPodAdmitResult(nil)
 }
-
+// system保留的cpulimit
 func (cm *containerManagerImpl) SystemCgroupsLimit() v1.ResourceList {
 	cpuLimit := int64(0)
 
@@ -784,7 +831,7 @@ func (cm *containerManagerImpl) SystemCgroupsLimit() v1.ResourceList {
 			resource.DecimalSI),
 	}
 }
-
+// 构造ContainerMap
 func buildContainerMapFromRuntime(runtimeService internalapi.RuntimeService) (containermap.ContainerMap, error) {
 	podSandboxMap := make(map[string]string)
 	podSandboxList, _ := runtimeService.ListPodSandbox(nil)
@@ -804,6 +851,7 @@ func buildContainerMapFromRuntime(runtimeService internalapi.RuntimeService) (co
 	return containerMap, nil
 }
 
+// 进程pid是否运行在host的命名空间
 func isProcessRunningInHost(pid int) (bool, error) {
 	// Get init pid namespace.
 	initPidNs, err := os.Readlink("/proc/1/ns/pid")
@@ -818,7 +866,7 @@ func isProcessRunningInHost(pid int) (bool, error) {
 	klog.V(10).InfoS("Process info", "pid", pid, "namespace", processPidNs)
 	return initPidNs == processPidNs, nil
 }
-
+// 从pidFile文件读出来pid
 func getPidFromPidFile(pidFile string) (int, error) {
 	file, err := os.Open(pidFile)
 	if err != nil {
@@ -839,6 +887,7 @@ func getPidFromPidFile(pidFile string) (int, error) {
 	return pid, nil
 }
 
+// 获取进程id
 func getPidsForProcess(name, pidFile string) ([]int, error) {
 	if len(pidFile) == 0 {
 		return procfs.PidOf(name)
@@ -891,6 +940,7 @@ func EnsureDockerInContainer(dockerAPIVersion *utilversion.Version, oomScoreAdj 
 	return utilerrors.NewAggregate(errs)
 }
 
+// 设置pid进程的cgroup为manager的cgroup，更新pid进程的oomScoreAdj
 func ensureProcessInContainerWithOOMScore(pid int, oomScoreAdj int, manager cgroups.Manager) error {
 	if runningInHost, err := isProcessRunningInHost(pid); err != nil {
 		// Err on the side of caution. Avoid moving the docker daemon unless we are able to identify its context.
@@ -937,6 +987,7 @@ func ensureProcessInContainerWithOOMScore(pid int, oomScoreAdj int, manager cgro
 // getContainer returns the cgroup associated with the specified pid.
 // It enforces a unified hierarchy for memory and cpu cgroups.
 // On systemd environments, it uses the name=systemd cgroup for the specified pid.
+//返回指定pid关联的cgroup
 func getContainer(pid int) (string, error) {
 	cgs, err := cgroups.ParseCgroupFile(fmt.Sprintf("/proc/%d/cgroup", pid))
 	if err != nil {
@@ -993,6 +1044,7 @@ func getContainer(pid int) (string, error) {
 // The reason of leaving kernel threads at root cgroup is that we don't want to tie the
 // execution of these threads with to-be defined /system quota and create priority inversions.
 //
+// 检索rootCgroupPath下的所有pid，把非内核进程放到manager的cgroup下面
 func ensureSystemCgroups(rootCgroupPath string, manager cgroups.Manager) error {
 	// Move non-kernel PIDs to the system container.
 	// Only keep errors on latest attempt.
@@ -1039,12 +1091,13 @@ func ensureSystemCgroups(rootCgroupPath string, manager cgroups.Manager) error {
 }
 
 // Determines whether the specified PID is a kernel PID.
+// 判断是否是内核进程
 func isKernelPid(pid int) bool {
 	// Kernel threads have no associated executable.
 	_, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
 	return err != nil && os.IsNotExist(err)
 }
-
+// 返回node资源
 func (cm *containerManagerImpl) GetCapacity() v1.ResourceList {
 	return cm.capacity
 }
@@ -1052,29 +1105,29 @@ func (cm *containerManagerImpl) GetCapacity() v1.ResourceList {
 func (cm *containerManagerImpl) GetDevicePluginResourceCapacity() (v1.ResourceList, v1.ResourceList, []string) {
 	return cm.deviceManager.GetCapacity()
 }
-
+// 所有分配给容器的设备
 func (cm *containerManagerImpl) GetDevices(podUID, containerName string) []*podresourcesapi.ContainerDevices {
 	return containerDevicesFromResourceDeviceInstances(cm.deviceManager.GetDevices(podUID, containerName))
 }
-
+// 可分配的所有设备
 func (cm *containerManagerImpl) GetAllocatableDevices() []*podresourcesapi.ContainerDevices {
 	return containerDevicesFromResourceDeviceInstances(cm.deviceManager.GetAllocatableDevices())
 }
-
+// 分配容器的cpu
 func (cm *containerManagerImpl) GetCPUs(podUID, containerName string) []int64 {
 	if cm.cpuManager != nil {
 		return cm.cpuManager.GetCPUs(podUID, containerName).ToSliceNoSortInt64()
 	}
 	return []int64{}
 }
-
+// 可分配的cpu
 func (cm *containerManagerImpl) GetAllocatableCPUs() []int64 {
 	if cm.cpuManager != nil {
 		return cm.cpuManager.GetAllocatableCPUs().ToSliceNoSortInt64()
 	}
 	return []int64{}
 }
-
+// 分配给指定容器的内存
 func (cm *containerManagerImpl) GetMemory(podUID, containerName string) []*podresourcesapi.ContainerMemory {
 	if cm.memoryManager == nil {
 		return []*podresourcesapi.ContainerMemory{}
@@ -1082,7 +1135,7 @@ func (cm *containerManagerImpl) GetMemory(podUID, containerName string) []*podre
 
 	return containerMemoryFromBlock(cm.memoryManager.GetMemory(podUID, containerName))
 }
-
+// 返回可分配的内存
 func (cm *containerManagerImpl) GetAllocatableMemory() []*podresourcesapi.ContainerMemory {
 	if cm.memoryManager == nil {
 		return []*podresourcesapi.ContainerMemory{}
@@ -1094,11 +1147,11 @@ func (cm *containerManagerImpl) GetAllocatableMemory() []*podresourcesapi.Contai
 func (cm *containerManagerImpl) ShouldResetExtendedResourceCapacity() bool {
 	return cm.deviceManager.ShouldResetExtendedResourceCapacity()
 }
-
+// 更新可分配设备
 func (cm *containerManagerImpl) UpdateAllocatedDevices() {
 	cm.deviceManager.UpdateAllocatedDevices()
 }
-
+// Block转换为ContainerMemory
 func containerMemoryFromBlock(blocks []memorymanagerstate.Block) []*podresourcesapi.ContainerMemory {
 	var containerMemories []*podresourcesapi.ContainerMemory
 

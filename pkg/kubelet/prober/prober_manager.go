@@ -53,18 +53,19 @@ var ProberResults = metrics.NewCounterVec(
 // manager use the cached probe results to set the appropriate Ready state in the PodStatus when
 // requested (UpdatePodStatus). Updating probe parameters is not currently supported.
 // TODO: Move liveness probing out of the runtime, to here.
+// 为每个容器的每种探针生成一个worker，worker会执行探针并把结果到manager，UpdatePodStatus会根据探针结果来更新Pod状态
 type Manager interface {
 	// AddPod creates new probe workers for every container probe. This should be called for every
 	// pod created.
-	AddPod(pod *v1.Pod)
+	AddPod(pod *v1.Pod) //为Pod的每个容器的每种探针创建一个worker来执行探针
 
 	// RemovePod handles cleaning up the removed pod state, including terminating probe workers and
 	// deleting cached results.
-	RemovePod(pod *v1.Pod)
+	RemovePod(pod *v1.Pod)  // 停止pod下面的所有worker
 
 	// CleanupPods handles cleaning up pods which should no longer be running.
 	// It takes a map of "desired pods" which should not be cleaned up.
-	CleanupPods(desiredPods map[types.UID]sets.Empty)
+	CleanupPods(desiredPods map[types.UID]sets.Empty) // 停止一组pod下面的所有探针
 
 	// UpdatePodStatus modifies the given PodStatus with the appropriate Ready state for each
 	// container based on container running status, cached probe results and worker states.
@@ -73,24 +74,24 @@ type Manager interface {
 
 type manager struct {
 	// Map of active workers for probes
-	workers map[probeKey]*worker
+	workers map[probeKey]*worker  // 所有的worker
 	// Lock for accessing & mutating workers
 	workerLock sync.RWMutex
 
 	// The statusManager cache provides pod IP and container IDs for probing.
-	statusManager status.Manager
+	statusManager status.Manager // 同步status到apiserver
 
 	// readinessManager manages the results of readiness probes
-	readinessManager results.Manager
+	readinessManager results.Manager // 缓存readiness探测结果
 
 	// livenessManager manages the results of liveness probes
-	livenessManager results.Manager
+	livenessManager results.Manager // 缓存readiness探测结果
 
 	// startupManager manages the results of startup probes
-	startupManager results.Manager
+	startupManager results.Manager // 缓存startup探测结果
 
 	// prober executes the probe actions.
-	prober *prober
+	prober *prober  // 实际用来进行探测(发请求的)的prober
 
 	start time.Time
 }
@@ -149,7 +150,7 @@ func (t probeType) String() string {
 		return "UNKNOWN"
 	}
 }
-
+// 为该Pod中的每种容器的每个探针创建一个worker来执行探针
 func (m *manager) AddPod(pod *v1.Pod) {
 	m.workerLock.Lock()
 	defer m.workerLock.Unlock()
@@ -195,7 +196,7 @@ func (m *manager) AddPod(pod *v1.Pod) {
 		}
 	}
 }
-
+// 停止该Pod下面的所有探针worker
 func (m *manager) RemovePod(pod *v1.Pod) {
 	m.workerLock.RLock()
 	defer m.workerLock.RUnlock()
@@ -211,7 +212,7 @@ func (m *manager) RemovePod(pod *v1.Pod) {
 		}
 	}
 }
-
+// 停止desiredPods的PodUID下的所有worker
 func (m *manager) CleanupPods(desiredPods map[types.UID]sets.Empty) {
 	m.workerLock.RLock()
 	defer m.workerLock.RUnlock()
@@ -222,7 +223,7 @@ func (m *manager) CleanupPods(desiredPods map[types.UID]sets.Empty) {
 		}
 	}
 }
-
+// 更新PodStatus的Started和Ready字段
 func (m *manager) UpdatePodStatus(podUID types.UID, podStatus *v1.PodStatus) {
 	for i, c := range podStatus.ContainerStatuses {
 		var started bool
@@ -232,7 +233,7 @@ func (m *manager) UpdatePodStatus(podUID types.UID, podStatus *v1.PodStatus) {
 			started = result == results.Success
 		} else {
 			// The check whether there is a probe which hasn't run yet.
-			_, exists := m.getWorker(podUID, c.Name, startup)
+			_, exists := m.getWorker(podUID, c.Name, startup)  // running状态worker会被删除？
 			started = !exists
 		}
 		podStatus.ContainerStatuses[i].Started = &started
@@ -250,7 +251,7 @@ func (m *manager) UpdatePodStatus(podUID types.UID, podStatus *v1.PodStatus) {
 				if exists {
 					// Trigger an immediate run of the readinessProbe to update ready state
 					select {
-					case w.manualTriggerCh <- struct{}{}:
+					case w.manualTriggerCh <- struct{}{}: // 触发readinessProbe探针
 					default: // Non-blocking.
 						klog.InfoS("Failed to trigger a manual run", "probe", w.probeType.String())
 					}
@@ -269,7 +270,7 @@ func (m *manager) UpdatePodStatus(podUID types.UID, podStatus *v1.PodStatus) {
 		podStatus.InitContainerStatuses[i].Ready = ready
 	}
 }
-
+// 获取指定的worker
 func (m *manager) getWorker(podUID types.UID, containerName string, probeType probeType) (*worker, bool) {
 	m.workerLock.RLock()
 	defer m.workerLock.RUnlock()
@@ -278,6 +279,7 @@ func (m *manager) getWorker(podUID types.UID, containerName string, probeType pr
 }
 
 // Called by the worker after exiting.
+// 从map中删除worker
 func (m *manager) removeWorker(podUID types.UID, containerName string, probeType probeType) {
 	m.workerLock.Lock()
 	defer m.workerLock.Unlock()
@@ -285,6 +287,7 @@ func (m *manager) removeWorker(podUID types.UID, containerName string, probeType
 }
 
 // workerCount returns the total number of probe workers. For testing.
+// 返回worker数量
 func (m *manager) workerCount() int {
 	m.workerLock.RLock()
 	defer m.workerLock.RUnlock()

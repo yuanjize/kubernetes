@@ -45,6 +45,7 @@ var _ CgroupNotifier = &linuxCgroupNotifier{}
 
 // NewCgroupNotifier returns a linuxCgroupNotifier, which performs cgroup control operations required
 // to receive notifications from the cgroup when the threshold is crossed in either direction.
+// linuxCgroupNotifier使用event_control机制来监听某一项cgroup的压力变化（使用epoll监听事件发生的文件描述符https://blog.csdn.net/weixin_48101150/article/details/118754401）
 func NewCgroupNotifier(path, attribute string, threshold int64) (CgroupNotifier, error) {
 	var watchfd, eventfd, epfd, controlfd int
 	var err error
@@ -97,7 +98,7 @@ func NewCgroupNotifier(path, attribute string, threshold int64) (CgroupNotifier,
 		stop:    make(chan struct{}),
 	}, nil
 }
-
+// 使用epoll循环监听event事件，有事件到来的时候，写eventCh（通知外部）
 func (n *linuxCgroupNotifier) Start(eventCh chan<- struct{}) {
 	err := unix.EpollCtl(n.epfd, unix.EPOLL_CTL_ADD, n.eventfd, &unix.EpollEvent{
 		Fd:     int32(n.eventfd),
@@ -135,6 +136,7 @@ func (n *linuxCgroupNotifier) Start(eventCh chan<- struct{}) {
 // wait waits up to notifierRefreshInterval for an event on the Epoll FD for the
 // eventfd we are concerned about.  It returns an error if one occurs, and true
 // if the consumer should read from the eventfd.
+// 使用epoll监听eventfd事件，timeout是超时事件
 func wait(epfd, eventfd int, timeout time.Duration) (bool, error) {
 	events := make([]unix.EpollEvent, numFdEvents+1)
 	timeoutMS := int(timeout / time.Millisecond)
@@ -169,7 +171,7 @@ func wait(epfd, eventfd int, timeout time.Duration) (bool, error) {
 	// An event occurred that we don't care about.
 	return false, nil
 }
-
+// 停止监听事件
 func (n *linuxCgroupNotifier) Stop() {
 	n.stopLock.Lock()
 	defer n.stopLock.Unlock()

@@ -33,6 +33,7 @@ import (
 // associated with it which runs the probe loop until the container permanently terminates, or the
 // stop channel is closed. The worker uses the probe Manager's statusManager to get up-to-date
 // container IDs.
+// 定时的执行探针(使用prober)并保存结果，直到容器永久终止
 type worker struct {
 	// Channel for stopping the probe.
 	stopCh chan struct{}
@@ -47,10 +48,10 @@ type worker struct {
 	container v1.Container
 
 	// Describes the probe configuration (read-only)
-	spec *v1.Probe
+	spec *v1.Probe // 探针配置
 
 	// The type of the worker.
-	probeType probeType
+	probeType probeType // 探针类型
 
 	// The probe value during the initial delay.
 	initialValue results.Result
@@ -64,10 +65,10 @@ type worker struct {
 	// The last probe result for this worker.
 	lastResult results.Result
 	// How many times in a row the probe has returned the same result.
-	resultRun int
+	resultRun int  // 连续多少次探针返回相同的结果
 
 	// If set, skip probing.
-	onHold bool
+	onHold bool // 是否设置了一个新的容器id
 
 	// proberResultsMetricLabels holds the labels attached to this worker
 	// for the ProberResults metric by result.
@@ -129,6 +130,7 @@ func newWorker(
 
 // run periodically probes the container.
 func (w *worker) run() {
+	// 探针执行间隔
 	probeTickerPeriod := time.Duration(w.spec.PeriodSeconds) * time.Second
 
 	// If kubelet restarted the probes could be started in rapid succession.
@@ -154,11 +156,12 @@ func (w *worker) run() {
 	}()
 
 probeLoop:
-	for w.doProbe() {
+	for w.doProbe() {  // 执行探针并记录结果，返回值代表是否继续执行
 		// Wait for next probe tick.
 		select {
 		case <-w.stopCh:
 			break probeLoop
+		// 定时或者手动执行
 		case <-probeTicker.C:
 		case <-w.manualTriggerCh:
 			// continue
@@ -168,6 +171,7 @@ probeLoop:
 
 // stop stops the probe worker. The worker handles cleanup and removes itself from its manager.
 // It is safe to call stop multiple times.
+// 停止worker
 func (w *worker) stop() {
 	select {
 	case w.stopCh <- struct{}{}:
@@ -177,10 +181,12 @@ func (w *worker) stop() {
 
 // doProbe probes the container once and records the result.
 // Returns whether the worker should continue.
+// 执行探针并发执行结果记录到resultsManager中，返回值代表doProbe是否要继续循环
 func (w *worker) doProbe() (keepGoing bool) {
 	defer func() { recover() }() // Actually eat panics (HandleCrash takes care of logging)
 	defer runtime.HandleCrash(func(_ interface{}) { keepGoing = true })
 
+	// Pod还没创建，继续检查
 	status, ok := w.probeManager.statusManager.GetPodStatus(w.pod.UID)
 	if !ok {
 		// Either the pod has not been created yet, or it was already deleted.
@@ -189,12 +195,13 @@ func (w *worker) doProbe() (keepGoing bool) {
 	}
 
 	// Worker should terminate if pod is terminated.
+	// Pod执行完了，不应该继续检查了
 	if status.Phase == v1.PodFailed || status.Phase == v1.PodSucceeded {
 		klog.V(3).InfoS("Pod is terminated, exiting probe worker",
 			"pod", klog.KObj(w.pod), "phase", status.Phase)
 		return false
 	}
-
+    // 容器没有被创建呢或者容器被删除了，继续检查
 	c, ok := podutil.GetContainerStatus(status.ContainerStatuses, w.container.Name)
 	if !ok || len(c.ContainerID) == 0 {
 		// Either the container has not been created yet, or it was deleted.
@@ -202,7 +209,7 @@ func (w *worker) doProbe() (keepGoing bool) {
 			"pod", klog.KObj(w.pod), "containerName", w.container.Name)
 		return true // Wait for more information.
 	}
-
+    // 容器重启了，继续检查
 	if w.containerID.String() != c.ContainerID {
 		if !w.containerID.IsEmpty() {
 			w.resultsManager.Remove(w.containerID)
@@ -212,7 +219,7 @@ func (w *worker) doProbe() (keepGoing bool) {
 		// We've got a new container; resume probing.
 		w.onHold = false
 	}
-
+     // 需要等新容器起来
 	if w.onHold {
 		// Worker is on hold until there is a new container.
 		return true
@@ -230,6 +237,7 @@ func (w *worker) doProbe() (keepGoing bool) {
 	}
 
 	// Graceful shutdown of the pod.
+	// Pod要凉，不用检查了
 	if w.pod.ObjectMeta.DeletionTimestamp != nil && (w.probeType == liveness || w.probeType == startup) {
 		klog.V(3).InfoS("Pod deletion requested, setting probe result to success",
 			"probeType", w.probeType, "pod", klog.KObj(w.pod), "containerName", w.container.Name)
@@ -244,10 +252,11 @@ func (w *worker) doProbe() (keepGoing bool) {
 	}
 
 	// Probe disabled for InitialDelaySeconds.
+	//已运行时事件小于InitialDelaySeconds
 	if int32(time.Since(c.State.Running.StartedAt.Time).Seconds()) < w.spec.InitialDelaySeconds {
 		return true
 	}
-
+    // start之后才能执行其他探针
 	if c.Started != nil && *c.Started {
 		// Stop probing for startup once container has started.
 		// we keep it running to make sure it will work for restarted container.
@@ -264,9 +273,10 @@ func (w *worker) doProbe() (keepGoing bool) {
 	// TODO: in order for exec probes to correctly handle downward API env, we must be able to reconstruct
 	// the full container environment here, OR we must make a call to the CRI in order to get those environment
 	// values from the running container.
+	// 真正去执行探针
 	result, err := w.probeManager.prober.probe(w.probeType, w.pod, status, w.container, w.containerID)
 	if err != nil {
-		// Prober error, throw away the result.
+		// Prober error, throw away the result. 检查失败，下次还要检查
 		return true
 	}
 
@@ -299,6 +309,7 @@ func (w *worker) doProbe() (keepGoing bool) {
 		// Stop probing until we see a new container ID. This is to reduce the
 		// chance of hitting #21751, where running `docker exec` when a
 		// container is being stopped may lead to corrupted container state.
+		// 检查失败，我们会停止检查，直到重启动一个新的container
 		w.onHold = true
 		w.resultRun = 0
 	}

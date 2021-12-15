@@ -25,7 +25,7 @@ import (
 	"k8s.io/api/core/v1"
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
 )
-
+// 创建容器之前根据一分配资源对容器的资源配置进行更新
 func (i *internalContainerLifecycleImpl) PreCreateContainer(pod *v1.Pod, container *v1.Container, containerConfig *runtimeapi.ContainerConfig) error {
 	if i.cpuManager != nil {
 		allocatedCPUs := i.cpuManager.GetCPUs(string(pod.UID), container.Name)

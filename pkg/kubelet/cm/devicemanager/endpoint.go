@@ -28,7 +28,7 @@ import (
 
 	pluginapi "k8s.io/kubelet/pkg/apis/deviceplugin/v1beta1"
 )
-
+// 用listandwatch缓存并监听设备信息变更，用grpclient和设备插件进行交互，一个endpoint负责一个设备插件
 // endpoint maps to a single registered device plugin. It is responsible
 // for managing gRPC communications with the device plugin and caching
 // device states reported by the device plugin.
@@ -57,6 +57,7 @@ type endpointImpl struct {
 
 // newEndpointImpl creates a new endpoint for the given resourceName.
 // This is to be used during normal device plugin registration.
+// socketPath 是device插件监听的unixdomainsocket路径，callback device更新的时候会传给callback
 func newEndpointImpl(socketPath, resourceName string, callback monitorCallback) (*endpointImpl, error) {
 	client, c, err := dial(socketPath)
 	if err != nil {
@@ -93,6 +94,7 @@ func (e *endpointImpl) callback(resourceName string, devices []pluginapi.Device)
 // stream update contains a new list of device states.
 // It then issues a callback to pass this information to the device manager which
 // will adjust the resource available information accordingly.
+// 对设备进行listAndWatch,有更新的设备就调用callback
 func (e *endpointImpl) run() {
 	stream, err := e.client.ListAndWatch(context.Background(), &pluginapi.Empty{})
 	if err != nil {
@@ -119,13 +121,13 @@ func (e *endpointImpl) run() {
 		e.callback(e.resourceName, newDevs)
 	}
 }
-
+// 是否已经停止
 func (e *endpointImpl) isStopped() bool {
 	e.mutex.Lock()
 	defer e.mutex.Unlock()
 	return !e.stopTime.IsZero()
 }
-
+// 是否已经过了优雅退出时间
 func (e *endpointImpl) stopGracePeriodExpired() bool {
 	e.mutex.Lock()
 	defer e.mutex.Unlock()
@@ -140,6 +142,7 @@ func (e *endpointImpl) setStopTime(t time.Time) {
 }
 
 // getPreferredAllocation issues GetPreferredAllocation gRPC call to the device plugin.
+// 调用设备插件的GetPreferredAllocation函数，看起来只是会帮选分配哪个更好，不会执行实际的分配
 func (e *endpointImpl) getPreferredAllocation(available, mustInclude []string, size int) (*pluginapi.PreferredAllocationResponse, error) {
 	if e.isStopped() {
 		return nil, fmt.Errorf(errEndpointStopped, e)
@@ -156,6 +159,7 @@ func (e *endpointImpl) getPreferredAllocation(available, mustInclude []string, s
 }
 
 // allocate issues Allocate gRPC call to the device plugin.
+// 调用设备插件的Allocate函数，真正分配设备
 func (e *endpointImpl) allocate(devs []string) (*pluginapi.AllocateResponse, error) {
 	if e.isStopped() {
 		return nil, fmt.Errorf(errEndpointStopped, e)
@@ -168,6 +172,7 @@ func (e *endpointImpl) allocate(devs []string) (*pluginapi.AllocateResponse, err
 }
 
 // preStartContainer issues PreStartContainer gRPC call to the device plugin.
+// 容器启动之前插件会执行PreStartContainer注册的初始化动作，在指定的设备上
 func (e *endpointImpl) preStartContainer(devs []string) (*pluginapi.PreStartContainerResponse, error) {
 	if e.isStopped() {
 		return nil, fmt.Errorf(errEndpointStopped, e)
@@ -178,7 +183,7 @@ func (e *endpointImpl) preStartContainer(devs []string) (*pluginapi.PreStartCont
 		DevicesIDs: devs,
 	})
 }
-
+// 停止
 func (e *endpointImpl) stop() {
 	e.mutex.Lock()
 	defer e.mutex.Unlock()
@@ -189,6 +194,7 @@ func (e *endpointImpl) stop() {
 }
 
 // dial establishes the gRPC communication with the registered device plugin. https://godoc.org/google.golang.org/grpc#Dial
+// 用unix domiansocket连接device插件
 func dial(unixSocketPath string) (pluginapi.DevicePluginClient, *grpc.ClientConn, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

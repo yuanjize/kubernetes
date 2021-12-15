@@ -31,7 +31,9 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodeports"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/noderesources"
 )
-
+/*
+ 看起来是和调度器相关的，不知道啥玩意先不看
+*/
 type getNodeAnyWayFuncType func() (*v1.Node, error)
 
 type pluginResourceUpdateFuncType func(*schedulerframework.NodeInfo, *PodAdmitAttributes) error
@@ -157,7 +159,7 @@ func (w *predicateAdmitHandler) Admit(attrs *PodAdmitAttributes) PodAdmitResult 
 		Admit: true,
 	}
 }
-
+// 把ScalarResources中不存在的拓展资源从Requests中移除
 func removeMissingExtendedResources(pod *v1.Pod, nodeInfo *schedulerframework.NodeInfo) *v1.Pod {
 	podCopy := pod.DeepCopy()
 	for i, c := range pod.Spec.Containers {

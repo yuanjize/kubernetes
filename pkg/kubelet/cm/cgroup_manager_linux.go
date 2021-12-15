@@ -42,6 +42,10 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/metrics"
 )
 
+/*
+ 1.对Cgroupv1，Cgroupv2和systemd进行一些兼容和封装
+ 2.cgroupManagerImpl实现了CgroupManager接口，通过对libcontainer.manager进行封装来对cgroup进行增删改查
+*/
 // libcontainerCgroupManagerType defines how to interface with libcontainer
 type libcontainerCgroupManagerType string
 
@@ -120,7 +124,7 @@ func ParseSystemdToCgroupName(name string) CgroupName {
 func (cgroupName CgroupName) ToCgroupfs() string {
 	return "/" + path.Join(cgroupName...)
 }
-
+// name转换为CgroupName，就是通过/ 切分为字符串数组
 func ParseCgroupfsToCgroupName(name string) CgroupName {
 	components := strings.Split(strings.TrimPrefix(name, "/"), "/")
 	if len(components) == 1 && components[0] == "" {
@@ -167,13 +171,16 @@ func (l *libcontainerAdapter) newManager(cgroups *libcontainerconfigs.Cgroup, pa
 }
 
 // CgroupSubsystems holds information about the mounted cgroup subsystems
+// cgroup挂载路径
 type CgroupSubsystems struct {
 	// Cgroup subsystem mounts.
 	// e.g.: "/sys/fs/cgroup/cpu" -> ["cpu", "cpuacct"]
+	// 子系统挂载
 	Mounts []libcontainercgroups.Mount
 
 	// Cgroup subsystem to their mount location.
 	// e.g.: "cpu" -> "/sys/fs/cgroup/cpu"
+	// 子系统挂载点
 	MountPoints map[string]string
 }
 
@@ -206,6 +213,7 @@ func NewCgroupManager(cs *CgroupSubsystems, cgroupDriver string) CgroupManager {
 
 // Name converts the cgroup to the driver specific value in cgroupfs form.
 // This always returns a valid cgroupfs path even when systemd driver is in use!
+// 返回cgroupfs或者syatemd格式的CgroupName
 func (m *cgroupManagerImpl) Name(name CgroupName) string {
 	if m.adapter.cgroupManagerType == libcontainerSystemd {
 		return name.ToSystemd()
@@ -214,6 +222,7 @@ func (m *cgroupManagerImpl) Name(name CgroupName) string {
 }
 
 // CgroupName converts the literal cgroupfs name on the host to an internal identifier.
+// name转换为CgroupName结构
 func (m *cgroupManagerImpl) CgroupName(name string) CgroupName {
 	if m.adapter.cgroupManagerType == libcontainerSystemd {
 		return ParseSystemdToCgroupName(name)
@@ -222,6 +231,7 @@ func (m *cgroupManagerImpl) CgroupName(name string) CgroupName {
 }
 
 // buildCgroupPaths builds a path to each cgroup subsystem for the specified name.
+// 返回的key就是cgroup资源名称，value是路径
 func (m *cgroupManagerImpl) buildCgroupPaths(name CgroupName) map[string]string {
 	cgroupFsAdaptedName := m.Name(name)
 	cgroupPaths := make(map[string]string, len(m.subsystems.MountPoints))
@@ -232,6 +242,7 @@ func (m *cgroupManagerImpl) buildCgroupPaths(name CgroupName) map[string]string 
 }
 
 // buildCgroupUnifiedPath builds a path to the specified name.
+// /sys/fs/cgroup+CgroupName路径
 func (m *cgroupManagerImpl) buildCgroupUnifiedPath(name CgroupName) string {
 	cgroupFsAdaptedName := m.Name(name)
 	return path.Join(cmutil.CgroupRoot, cgroupFsAdaptedName)
@@ -254,15 +265,16 @@ func updateSystemdCgroupInfo(cgroupConfig *libcontainerconfigs.Cgroup, cgroupNam
 }
 
 // Exists checks if all subsystem cgroups already exist
+// 检查是否Cgroup已存在
 func (m *cgroupManagerImpl) Exists(name CgroupName) bool {
 	if libcontainercgroups.IsCgroup2UnifiedMode() {
 		cgroupPath := m.buildCgroupUnifiedPath(name)
-		neededControllers := getSupportedUnifiedControllers()
-		enabledControllers, err := readUnifiedControllers(cgroupPath)
+		neededControllers := getSupportedUnifiedControllers()         // 支持的controller （就是支持的susystem，例如cpu，mem）
+		enabledControllers, err := readUnifiedControllers(cgroupPath) // 系统打开的controller
 		if err != nil {
 			return false
 		}
-		difference := neededControllers.Difference(enabledControllers)
+		difference := neededControllers.Difference(enabledControllers) // kubelete需要，但是系统没有打开的controller
 		if difference.Len() > 0 {
 			klog.V(4).InfoS("The cgroup has some missing controllers", "cgroupName", name, "controllers", difference)
 			return false
@@ -271,6 +283,7 @@ func (m *cgroupManagerImpl) Exists(name CgroupName) bool {
 	}
 
 	// Get map of all cgroup paths on the system for the particular cgroup
+	// 获取每个Cgroup的路径
 	cgroupPaths := m.buildCgroupPaths(name)
 
 	// the presence of alternative control groups not known to runc confuses
@@ -305,12 +318,13 @@ func (m *cgroupManagerImpl) Exists(name CgroupName) bool {
 }
 
 // Destroy destroys the specified cgroup
+// 销毁cgroup
 func (m *cgroupManagerImpl) Destroy(cgroupConfig *CgroupConfig) error {
 	start := time.Now()
 	defer func() {
 		metrics.CgroupManagerDuration.WithLabelValues("destroy").Observe(metrics.SinceInSeconds(start))
 	}()
-
+	// 该cgroup对应的所有subsystem路径
 	cgroupPaths := m.buildCgroupPaths(cgroupConfig.Name)
 
 	libcontainerCgroupConfig := &libcontainerconfigs.Cgroup{}
@@ -347,6 +361,7 @@ func getCpuWeight(cpuShares *uint64) uint64 {
 }
 
 // readUnifiedControllers reads the controllers available at the specified cgroup
+// 指定的cgroup中支持的controller
 func readUnifiedControllers(path string) (sets.String, error) {
 	controllersFileContent, err := ioutil.ReadFile(filepath.Join(path, "cgroup.controllers"))
 	if err != nil {
@@ -362,6 +377,7 @@ var (
 )
 
 // getSupportedUnifiedControllers returns a set of supported controllers when running on cgroup v2
+// kubelete需要的unified controller（cgroupv2才有这个）实际支持几个
 func getSupportedUnifiedControllers() sets.String {
 	// This is the set of controllers used by the Kubelet
 	supportedControllers := sets.NewString("cpu", "cpuset", "memory", "hugetlb", "pids")
@@ -377,6 +393,7 @@ func getSupportedUnifiedControllers() sets.String {
 	return supportedControllers.Intersection(availableRootControllers)
 }
 
+// 可以贱人认为是把ResourceConfig转换成Resources
 func (m *cgroupManagerImpl) toResources(resourceConfig *ResourceConfig) *libcontainerconfigs.Resources {
 	resources := &libcontainerconfigs.Resources{
 		SkipDevices: true,
@@ -441,6 +458,7 @@ func (m *cgroupManagerImpl) toResources(resourceConfig *ResourceConfig) *libcont
 }
 
 // Update updates the cgroup with the specified Cgroup Configuration
+// 更新cgroup配置，其实对cgroup的操作都是用newManager实现的
 func (m *cgroupManagerImpl) Update(cgroupConfig *CgroupConfig) error {
 	start := time.Now()
 	defer func() {
@@ -492,6 +510,7 @@ func (m *cgroupManagerImpl) Update(cgroupConfig *CgroupConfig) error {
 }
 
 // Create creates the specified cgroup
+// 先创建cgroup，然后用update设置cgroup参数
 func (m *cgroupManagerImpl) Create(cgroupConfig *CgroupConfig) error {
 	start := time.Now()
 	defer func() {
@@ -541,6 +560,7 @@ func (m *cgroupManagerImpl) Create(cgroupConfig *CgroupConfig) error {
 }
 
 // Scans through all subsystems to find pids associated with specified cgroup.
+// 获取CgroupName关联的所有pid
 func (m *cgroupManagerImpl) Pids(name CgroupName) []int {
 	// we need the driver specific name
 	cgroupFsName := m.Name(name)
@@ -591,6 +611,7 @@ func (m *cgroupManagerImpl) Pids(name CgroupName) []int {
 }
 
 // ReduceCPULimits reduces the cgroup's cpu shares to the lowest possible value
+// 更新CPUShares为最小值
 func (m *cgroupManagerImpl) ReduceCPULimits(cgroupName CgroupName) error {
 	// Set lowest possible CpuShares value for the cgroup
 	minimumCPUShares := uint64(MinShares)
@@ -606,6 +627,7 @@ func (m *cgroupManagerImpl) ReduceCPULimits(cgroupName CgroupName) error {
 
 // MemoryUsage returns the current memory usage of the specified cgroup,
 // as read from cgroupfs.
+// 返回指定cgroup的内存使用情况
 func (m *cgroupManagerImpl) MemoryUsage(name CgroupName) (int64, error) {
 	var path, file string
 	if libcontainercgroups.IsCgroup2UnifiedMode() {

@@ -40,14 +40,16 @@ const (
 )
 
 //createNodeAllocatableCgroups creates Node Allocatable Cgroup when CgroupsPerQOS flag is specified as true
+// 创建根cgroup
 func (cm *containerManagerImpl) createNodeAllocatableCgroups() error {
 	nodeAllocatable := cm.internalCapacity
 	// Use Node Allocatable limits instead of capacity if the user requested enforcing node allocatable.
 	nc := cm.NodeConfig.NodeAllocatableConfig
 	if cm.CgroupsPerQOS && nc.EnforceNodeAllocatable.Has(kubetypes.NodeAllocatableEnforcementKey) {
+		// // 所有资源（包括maxpid资源）-reversed资源
 		nodeAllocatable = cm.getNodeAllocatableInternalAbsolute()
 	}
-
+    // 创建cgroup
 	cgroupConfig := &CgroupConfig{
 		Name: cm.cgroupRoot,
 		// The default limits for cpu shares can be very low which can lead to CPU starvation for pods.
@@ -64,6 +66,11 @@ func (cm *containerManagerImpl) createNodeAllocatableCgroups() error {
 }
 
 // enforceNodeAllocatableCgroups enforce Node Allocatable Cgroup settings.
+/*
+  定时更新root cgroup的limit
+  更新SystemReservedCgroup 的limit
+  更新KubeReservedCgroup 的limit
+*/
 func (cm *containerManagerImpl) enforceNodeAllocatableCgroups() error {
 	nc := cm.NodeConfig.NodeAllocatableConfig
 
@@ -96,6 +103,7 @@ func (cm *containerManagerImpl) enforceNodeAllocatableCgroups() error {
 	// Until evictions happen retry cgroup updates.
 	// Update limits on non root cgroup-root to be safe since the default limits for CPU can be too low.
 	// Check if cgroupRoot is set to a non-empty value (empty would be the root container)
+	// 定时更新根cgroup
 	if len(cm.cgroupRoot) > 0 {
 		go func() {
 			for {
@@ -111,6 +119,7 @@ func (cm *containerManagerImpl) enforceNodeAllocatableCgroups() error {
 		}()
 	}
 	// Now apply kube reserved and system reserved limits if required.
+	// 为reserved limit更新对应的cgroup
 	if nc.EnforceNodeAllocatable.Has(kubetypes.SystemReservedEnforcementKey) {
 		klog.V(2).InfoS("Enforcing system reserved on cgroup", "cgroupName", nc.SystemReservedCgroupName, "limits", nc.SystemReserved)
 		if err := enforceExistingCgroup(cm.cgroupManager, cm.cgroupManager.CgroupName(nc.SystemReservedCgroupName), nc.SystemReserved); err != nil {
@@ -133,6 +142,7 @@ func (cm *containerManagerImpl) enforceNodeAllocatableCgroups() error {
 }
 
 // enforceExistingCgroup updates the limits `rl` on existing cgroup `cName` using `cgroupManager` interface.
+// 用rl更新CgroupName对应的cgrouplimit
 func enforceExistingCgroup(cgroupManager CgroupManager, cName CgroupName, rl v1.ResourceList) error {
 	rp := getCgroupConfig(rl)
 
@@ -193,10 +203,11 @@ func getCgroupConfig(rl v1.ResourceList) *ResourceConfig {
 // GetNodeAllocatableAbsolute returns the absolute value of Node Allocatable which is primarily useful for enforcement.
 // Note that not all resources that are available on the node are included in the returned list of resources.
 // Returns a ResourceList.
+// 所有资源（不包括包括maxpid资源）-reversed资源
 func (cm *containerManagerImpl) GetNodeAllocatableAbsolute() v1.ResourceList {
 	return cm.getNodeAllocatableAbsoluteImpl(cm.capacity)
 }
-
+// 所有资源-reversed资源
 func (cm *containerManagerImpl) getNodeAllocatableAbsoluteImpl(capacity v1.ResourceList) v1.ResourceList {
 	result := make(v1.ResourceList)
 	for k, v := range capacity {
@@ -219,11 +230,13 @@ func (cm *containerManagerImpl) getNodeAllocatableAbsoluteImpl(capacity v1.Resou
 // getNodeAllocatableInternalAbsolute is similar to getNodeAllocatableAbsolute except that
 // it also includes internal resources (currently process IDs).  It is intended for setting
 // up top level cgroups only.
+// 所有资源（包括maxpid资源）-reversed资源
 func (cm *containerManagerImpl) getNodeAllocatableInternalAbsolute() v1.ResourceList {
 	return cm.getNodeAllocatableAbsoluteImpl(cm.internalCapacity)
 }
 
 // GetNodeAllocatableReservation returns amount of compute or storage resource that have to be reserved on this node from scheduling.
+// 所有系统的Reserved资源的和
 func (cm *containerManagerImpl) GetNodeAllocatableReservation() v1.ResourceList {
 	evictionReservation := hardEvictionReservation(cm.HardEvictionThresholds, cm.capacity)
 	result := make(v1.ResourceList)
@@ -247,6 +260,7 @@ func (cm *containerManagerImpl) GetNodeAllocatableReservation() v1.ResourceList 
 
 // validateNodeAllocatable ensures that the user specified Node Allocatable Configuration doesn't reserve more than the node capacity.
 // Returns error if the configuration is invalid, nil otherwise.
+// 资源分配是否合理，保留的资源不能大于系统本身的资源
 func (cm *containerManagerImpl) validateNodeAllocatable() error {
 	var errors []string
 	nar := cm.GetNodeAllocatableReservation()

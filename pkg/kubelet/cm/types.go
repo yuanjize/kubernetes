@@ -22,6 +22,7 @@ import (
 )
 
 // ResourceConfig holds information about all the supported cgroup resource parameters.
+// cgroup自己远限制的参数
 type ResourceConfig struct {
 	// Memory limit (in bytes).
 	Memory *int64
@@ -48,6 +49,7 @@ type CgroupName []string
 // This is common object which is used to specify
 // cgroup information to both systemd and raw cgroup fs
 // implementation of the Cgroup Manager interface.
+// 包含cgroup的名字和资源限制
 type CgroupConfig struct {
 	// Fully qualified name prior to any driver specific conversions.
 	Name CgroupName
@@ -57,6 +59,7 @@ type CgroupConfig struct {
 
 // CgroupManager allows for cgroup management.
 // Supports Cgroup Creation ,Deletion and Updates.
+// 对cgroup进行增删改查，实际是使用libcontainer.Manager实现的
 type CgroupManager interface {
 	// Create creates and applies the cgroup configurations on the cgroup.
 	// It just creates the leaf cgroups.
@@ -78,13 +81,14 @@ type CgroupManager interface {
 	CgroupName(name string) CgroupName
 	// Pids scans through all subsystems to find pids associated with specified cgroup.
 	Pids(name CgroupName) []int
-	// ReduceCPULimits reduces the CPU CFS values to the minimum amount of shares.
+	// ReduceCPULimits reduces the CPU CFS values to the minimum amount of shares. 设置cpushare为最小值
 	ReduceCPULimits(cgroupName CgroupName) error
 	// MemoryUsage returns current memory usage of the specified cgroup, as read from the cgroupfs.
 	MemoryUsage(name CgroupName) (int64, error)
 }
 
 // QOSContainersInfo stores the names of containers per qos
+// 不同的qos有不同的CgroupName
 type QOSContainersInfo struct {
 	Guaranteed CgroupName
 	BestEffort CgroupName
@@ -94,6 +98,7 @@ type QOSContainersInfo struct {
 // PodContainerManager stores and manages pod level containers
 // The Pod workers interact with the PodContainerManager to create and destroy
 // containers for the pod.
+// pod级别的cgroup相关操作，底层还是使用的CgroupManager
 type PodContainerManager interface {
 	// GetPodContainerName returns the CgroupName identifier, and its literal cgroupfs form on the host.
 	GetPodContainerName(*v1.Pod) (CgroupName, string)

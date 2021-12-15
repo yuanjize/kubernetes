@@ -82,6 +82,7 @@ type Manager interface {
 }
 
 // DeviceRunContainerOptions contains the combined container runtime settings to consume its allocated devices.
+// 容器设置
 type DeviceRunContainerOptions struct {
 	// The environment variables list.
 	Envs []kubecontainer.EnvVar

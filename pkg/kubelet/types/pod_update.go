@@ -157,6 +157,7 @@ func IsStaticPod(pod *v1.Pod) bool {
 }
 
 // IsCriticalPod returns true if pod's priority is greater than or equal to SystemCriticalPriority.
+// pod的优先级是否是大于 critic
 func IsCriticalPod(pod *v1.Pod) bool {
 	if IsStaticPod(pod) {
 		return true

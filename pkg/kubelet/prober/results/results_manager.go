@@ -25,6 +25,7 @@ import (
 )
 
 // Manager provides a probe results cache and channel of updates.
+// 缓存容器id和探针探测结果，Updates返回一个channel，有数据更新的时候用这个channel通知外部
 type Manager interface {
 	// Get returns the cached result for the container with the given ID.
 	Get(kubecontainer.ContainerID) (Result, bool)
@@ -117,6 +118,7 @@ func (m *manager) Set(id kubecontainer.ContainerID, result Result, pod *v1.Pod) 
 }
 
 // Internal helper for locked portion of set. Returns whether an update should be sent.
+// 甚至到缓存，如果没有更新返回false
 func (m *manager) setInternal(id kubecontainer.ContainerID, result Result) bool {
 	m.Lock()
 	defer m.Unlock()
@@ -133,7 +135,7 @@ func (m *manager) Remove(id kubecontainer.ContainerID) {
 	defer m.Unlock()
 	delete(m.cache, id)
 }
-
+// 返回update的channel
 func (m *manager) Updates() <-chan Update {
 	return m.updates
 }
