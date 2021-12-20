@@ -59,6 +59,12 @@ type dbusInhibiter interface {
 }
 
 // Manager has functions that can be used to interact with the Node Shutdown Manager.
+// 主要用来监听关机事件，对关机进行拦截（设置为延迟关机）->优雅关闭Pod-> 关机
+/*
+1.监听关机事件
+2.当关机事件发生时拦截它并设置为延迟关机
+3.在延迟的时间段内同步Pod状态，优雅关闭当前node上的Pod
+*/
 type Manager struct {
 	recorder record.EventRecorder
 	nodeRef  *v1.ObjectReference
@@ -95,6 +101,7 @@ func NewManager(recorder record.EventRecorder, nodeRef *v1.ObjectReference, getP
 }
 
 // Admit rejects all pods if node is shutting
+// node关闭了，拒绝Pod的准入请求
 func (m *Manager) Admit(attrs *lifecycle.PodAdmitAttributes) lifecycle.PodAdmitResult {
 	nodeShuttingDown := m.ShutdownStatus() != nil
 
@@ -110,7 +117,7 @@ func (m *Manager) Admit(attrs *lifecycle.PodAdmitAttributes) lifecycle.PodAdmitR
 
 // Start starts the node shutdown manager and will start watching the node for shutdown events.
 func (m *Manager) Start() error {
-	if !m.isFeatureEnabled() {
+	if !m.isFeatureEnabled() { // 优雅关闭node
 		return nil
 	}
 	stop, err := m.start()
@@ -147,6 +154,8 @@ func (m *Manager) start() (chan struct{}, error) {
 	}
 
 	// If the logind's InhibitDelayMaxUSec as configured in (logind.conf) is less than shutdownGracePeriodRequested, attempt to update the value to shutdownGracePeriodRequested.
+	// shutdownGracePeriodRequested和currentInhibitDelay取最大的，延迟关机的状态下超过这个时间就会自动关机
+	// http://www.jinbuguo.com/systemd/systemd-inhibit.html
 	if m.shutdownGracePeriodRequested > currentInhibitDelay {
 		err := m.dbusCon.OverrideInhibitDelay(m.shutdownGracePeriodRequested)
 		if err != nil {
@@ -229,7 +238,7 @@ func (m *Manager) start() (chan struct{}, error) {
 	}()
 	return stop, nil
 }
-
+// 获取关机延迟锁头
 func (m *Manager) aquireInhibitLock() error {
 	lock, err := m.dbusCon.InhibitShutdown()
 	if err != nil {
@@ -243,6 +252,7 @@ func (m *Manager) aquireInhibitLock() error {
 }
 
 // Returns if the feature is enabled
+// 优雅关闭node
 func (m *Manager) isFeatureEnabled() bool {
 	return utilfeature.DefaultFeatureGate.Enabled(features.GracefulNodeShutdown) && m.shutdownGracePeriodRequested > 0
 }
@@ -261,7 +271,7 @@ func (m *Manager) ShutdownStatus() error {
 	}
 	return nil
 }
-
+// Pod优雅结束
 func (m *Manager) processShutdownEvent() error {
 	klog.V(1).InfoS("Shutdown manager processing shutdown event")
 	activePods := m.getPods()
@@ -309,7 +319,7 @@ func (m *Manager) processShutdownEvent() error {
 	select {
 	case <-c:
 		break
-	case <-time.After(m.shutdownGracePeriodRequested):
+	case <-time.After(m.shutdownGracePeriodRequested):  // 规定时间没Pod的优雅推出没有完成
 		klog.V(1).InfoS("Shutdown manager pod killing time out", "gracePeriod", m.shutdownGracePeriodRequested)
 	}
 

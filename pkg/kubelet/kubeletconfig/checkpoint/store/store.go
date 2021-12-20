@@ -25,6 +25,7 @@ import (
 )
 
 // Store saves checkpoints and information about which is the assigned and last-known-good checkpoint to a storage layer
+// 保存payload和RemoteConfigSource
 type Store interface {
 	// Initialize sets up the storage layer
 	Initialize() error
@@ -39,7 +40,7 @@ type Store interface {
 	// Load loads the KubeletConfiguration from the checkpoint referenced by `source`.
 	Load(source checkpoint.RemoteConfigSource) (*kubeletconfig.KubeletConfiguration, error)
 
-	// AssignedModified returns the last time that the assigned checkpoint was set
+	// AssignedModified returns the last time that the assigned checkpoint was setz
 	AssignedModified() (time.Time, error)
 	// Assigned returns the source that points to the checkpoint currently assigned to the Kubelet, or nil if no assigned checkpoint is set
 	Assigned() (checkpoint.RemoteConfigSource, error)

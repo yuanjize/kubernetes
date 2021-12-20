@@ -34,6 +34,7 @@ type Loader interface {
 }
 
 // fsLoader loads configuration from `configDir`
+// 用来从kubeletFile中decode出来KubeletConfiguration
 type fsLoader struct {
 	// fs is the filesystem where the config files exist; can be mocked for testing
 	fs utilfs.Filesystem
@@ -56,7 +57,7 @@ func NewFsLoader(fs utilfs.Filesystem, kubeletFile string) (Loader, error) {
 		kubeletFile:   kubeletFile,
 	}, nil
 }
-
+// 从kubeletFile中decode出来KubeletConfiguration
 func (loader *fsLoader) Load() (*kubeletconfig.KubeletConfiguration, error) {
 	data, err := loader.fs.ReadFile(loader.kubeletFile)
 	if err != nil {
@@ -79,6 +80,7 @@ func (loader *fsLoader) Load() (*kubeletconfig.KubeletConfiguration, error) {
 }
 
 // resolveRelativePaths makes relative paths absolute by resolving them against `root`
+// KubeletConfiguration中的一些路径被替换为绝对路径
 func resolveRelativePaths(paths []*string, root string) {
 	for _, path := range paths {
 		// leave empty paths alone, "no path" is a valid input

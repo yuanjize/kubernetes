@@ -58,12 +58,14 @@ func newSharedNodeInformer(client clientset.Interface, nodeName string,
 }
 
 // onAddNodeEvent calls onUpdateNodeEvent with the new object and a nil old object
+// 添加新节点
 func (cc *Controller) onAddNodeEvent(newObj interface{}) {
 	cc.onUpdateNodeEvent(nil, newObj)
 }
 
 // onUpdateNodeEvent checks whether the configSource changed between oldObj and newObj, and pokes the
 // configuration sync worker if there was a change
+// 更新节点
 func (cc *Controller) onUpdateNodeEvent(oldObj interface{}, newObj interface{}) {
 	newNode, ok := newObj.(*apiv1.Node)
 	if !ok {

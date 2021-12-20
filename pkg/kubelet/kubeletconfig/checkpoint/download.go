@@ -39,6 +39,7 @@ import (
 )
 
 // Payload represents a local copy of a config source (payload) object
+// 配置源的本地copy
 type Payload interface {
 	// UID returns a globally unique (space and time) identifier for the payload.
 	// The return value is guaranteed non-empty.
@@ -56,17 +57,20 @@ type Payload interface {
 }
 
 // RemoteConfigSource represents a remote config source object that can be downloaded as a Checkpoint
+// 远程配置源，可以用Download下载配置
 type RemoteConfigSource interface {
 	// KubeletFilename returns the name of the Kubelet config file as it should appear in the keys of Payload.Files()
 	KubeletFilename() string
 
 	// APIPath returns the API path to the remote resource, e.g. its SelfLink
+	// 发挥这个源的API路径
 	APIPath() string
 
 	// UID returns the globally unique identifier for the most recently downloaded payload targeted by the source.
 	UID() string
 
 	// ResourceVersion returns the resource version of the most recently downloaded payload targeted by the source.
+	// 最近下载的该source代表的资源的版本
 	ResourceVersion() string
 
 	// Download downloads the remote config source's target object and returns a Payload backed by the object,
@@ -74,18 +78,22 @@ type RemoteConfigSource interface {
 	// Download takes an optional store as an argument. If provided, Download will check this store for the
 	// target object prior to contacting the API server.
 	// Download updates the local UID and ResourceVersion tracked by this source, based on the downloaded payload.
+	// 下载config
 	Download(client clientset.Interface, store cache.Store) (Payload, string, error)
 
 	// Informer returns an informer that can be used to detect changes to the remote config source
+	// 检车远程配置源的变化
 	Informer(client clientset.Interface, handler cache.ResourceEventHandlerFuncs) cache.SharedInformer
 
 	// Encode returns a []byte representation of the object behind the RemoteConfigSource
+	// 返回代表RemoteConfigSource的字节切片
 	Encode() ([]byte, error)
 
 	// NodeConfigSource returns a copy of the underlying apiv1.NodeConfigSource object.
 	// All RemoteConfigSources are expected to be backed by a NodeConfigSource,
 	// though the convenience methods on the interface will target the source
 	// type that was detected in a call to NewRemoteConfigSource.
+	// 底层NodeConfigSource的copy
 	NodeConfigSource() *apiv1.NodeConfigSource
 }
 
@@ -107,6 +115,7 @@ func NewRemoteConfigSource(source *apiv1.NodeConfigSource) (RemoteConfigSource, 
 
 // DecodeRemoteConfigSource is a helper for using the apimachinery to decode serialized RemoteConfigSources;
 // e.g. the metadata stored by checkpoint/store/fsstore.go
+// 反序列化出RemoteConfigSource
 func DecodeRemoteConfigSource(data []byte) (RemoteConfigSource, error) {
 	// Decode the remote config source. We want this to be non-strict
 	// so we don't error out on newer API keys.
@@ -138,6 +147,7 @@ func DecodeRemoteConfigSource(data []byte) (RemoteConfigSource, error) {
 
 // EqualRemoteConfigSources is a helper for comparing remote config sources by
 // comparing the underlying API objects for semantic equality.
+// 判断两个source是否是相同的
 func EqualRemoteConfigSources(a, b RemoteConfigSource) bool {
 	if a != nil && b != nil {
 		return apiequality.Semantic.DeepEqual(a.NodeConfigSource(), b.NodeConfigSource())
@@ -147,7 +157,7 @@ func EqualRemoteConfigSources(a, b RemoteConfigSource) bool {
 
 // remoteConfigMap implements RemoteConfigSource for v1/ConfigMap config sources
 type remoteConfigMap struct {
-	source *apiv1.NodeConfigSource
+	source *apiv1.NodeConfigSource // 代表使用的configmanager
 }
 
 var _ RemoteConfigSource = (*remoteConfigMap)(nil)
@@ -170,7 +180,7 @@ func (r *remoteConfigMap) UID() string {
 func (r *remoteConfigMap) ResourceVersion() string {
 	return r.source.ConfigMap.ResourceVersion
 }
-
+// 获取payload, 先从store获取，获取不到再从apiserver获取。就是从内存和apiserver查找ConfigMaps
 func (r *remoteConfigMap) Download(client clientset.Interface, store cache.Store) (Payload, string, error) {
 	var (
 		cm  *apiv1.ConfigMap
@@ -211,7 +221,7 @@ func (r *remoteConfigMap) Download(client clientset.Interface, store cache.Store
 	r.source.ConfigMap.ResourceVersion = cm.ResourceVersion
 	return payload, "", nil
 }
-
+// 返回informer来监听config变化
 func (r *remoteConfigMap) Informer(client clientset.Interface, handler cache.ResourceEventHandlerFuncs) cache.SharedInformer {
 	// select ConfigMap by name
 	fieldSelector := fields.OneTermEqualSelector("metadata.name", r.source.ConfigMap.Name)
@@ -228,7 +238,7 @@ func (r *remoteConfigMap) Informer(client clientset.Interface, handler cache.Res
 
 	return informer
 }
-
+// 对NodeConfigSource进行序列化
 func (r *remoteConfigMap) Encode() ([]byte, error) {
 	encoder, err := utilcodec.NewKubeletconfigYAMLEncoder(kubeletconfigv1beta1.SchemeGroupVersion)
 	if err != nil {
@@ -245,7 +255,7 @@ func (r *remoteConfigMap) Encode() ([]byte, error) {
 func (r *remoteConfigMap) NodeConfigSource() *apiv1.NodeConfigSource {
 	return r.source.DeepCopy()
 }
-
+// 从store中查询ConfigMap
 func getConfigMapFromStore(store cache.Store, namespace, name string) (*apiv1.ConfigMap, error) {
 	key := fmt.Sprintf("%s/%s", namespace, name)
 	obj, ok, err := store.GetByKey(key)

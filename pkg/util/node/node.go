@@ -256,6 +256,7 @@ func PatchNodeCIDRs(c clientset.Interface, node types.NodeName, cidrs []string) 
 }
 
 // PatchNodeStatus patches node status.
+// 生成补丁，并向apiserver给node打补丁
 func PatchNodeStatus(c v1core.CoreV1Interface, nodeName types.NodeName, oldNode *v1.Node, newNode *v1.Node) (*v1.Node, []byte, error) {
 	patchBytes, err := preparePatchBytesforNodeStatus(nodeName, oldNode, newNode)
 	if err != nil {

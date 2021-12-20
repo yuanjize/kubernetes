@@ -23,6 +23,7 @@ import (
 )
 
 // configMapPayload implements Payload, backed by a v1/ConfigMap config source object
+// 根据ConfigMap创建Payload
 type configMapPayload struct {
 	cm *apiv1.ConfigMap
 }

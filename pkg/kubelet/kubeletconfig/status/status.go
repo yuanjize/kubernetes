@@ -29,7 +29,9 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/metrics"
 	nodeutil "k8s.io/kubernetes/pkg/util/node"
 )
-
+/*
+  用来更改node.status.config并打补丁到apiserver
+*/
 const (
 	// LoadError indicates that the Kubelet failed to load the config checkpoint
 	LoadError = "failed to load config, see Kubelet log for details"

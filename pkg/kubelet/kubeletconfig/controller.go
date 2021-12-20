@@ -43,7 +43,7 @@ const (
 	// because it is not especially clear where this should live in the API.
 	configTrialDuration = 10 * time.Minute
 )
-
+// 废弃功能，不看了
 // TransformFunc edits the KubeletConfiguration in-place, and returns an
 // error if any of the transformations failed.
 type TransformFunc func(kc *kubeletconfig.KubeletConfiguration) error
@@ -97,15 +97,18 @@ func NewController(dynamicConfigDir string, transform TransformFunc) *Controller
 // Bootstrap attempts to return a valid KubeletConfiguration based on the configuration of the Controller,
 // or returns an error if no valid configuration could be produced. Bootstrap should be called synchronously before StartSync.
 // If the pre-existing local configuration should be used, Bootstrap returns a nil config.
+// 进行一些初始化，更新 node status config
 func (cc *Controller) Bootstrap() (*kubeletconfig.KubeletConfiguration, error) {
 	klog.InfoS("Kubelet config controller starting controller")
 
 	// ensure the filesystem is initialized
+	// 对store进行初始化
 	if err := cc.initializeDynamicConfigDir(); err != nil {
 		return nil, err
 	}
 
 	// determine assigned source and set status
+	// 更新node status
 	assignedSource, err := cc.checkpointStore.Assigned()
 	if err != nil {
 		return nil, err
@@ -115,6 +118,7 @@ func (cc *Controller) Bootstrap() (*kubeletconfig.KubeletConfiguration, error) {
 	}
 
 	// determine last-known-good source and set status
+	// 更新node status
 	lastKnownGoodSource, err := cc.checkpointStore.LastKnownGood()
 	if err != nil {
 		return nil, err
@@ -138,6 +142,7 @@ func (cc *Controller) Bootstrap() (*kubeletconfig.KubeletConfiguration, error) {
 		// periodically checks whether the last-known good needs to be updated
 		// we only do this when the assigned config loads and passes validation
 		// wait.Forever will call the func once before starting the timer
+		// 定期更新LastKnownGood
 		go wait.Forever(func() { cc.checkTrial(configTrialDuration) }, 10*time.Second)
 
 		return assignedConfig, nil
@@ -151,6 +156,7 @@ func (cc *Controller) Bootstrap() (*kubeletconfig.KubeletConfiguration, error) {
 	klog.ErrorS(err, "Kubelet config controller", "reason", reason)
 
 	// set status to indicate the failure with the assigned config
+	// 更新node status config
 	cc.configStatus.SetError(reason)
 
 	// if the last-known-good source is nil, return nil to indicate local config
@@ -193,10 +199,11 @@ func (cc *Controller) StartSync(client clientset.Interface, eventClient v1core.E
 	// The code now uses `go name()` instead of `go utilpanic.HandlePanic(func(){...})()` to avoid confusion.
 
 	// status sync worker
+	// 定期状态同步到apiserver
 	statusSyncLoopFunc := utilpanic.HandlePanic(func() {
 		klog.InfoS("Kubelet config controller starting status sync loop")
 		wait.JitterUntil(func() {
-			cc.configStatus.Sync(client, nodeName)
+			cc.configStatus.Sync(client, nodeName) // 定时同步patch到apiserver
 		}, 10*time.Second, 0.2, true, wait.NeverStop)
 	})
 	// remote config source informer, if we have a remote source to watch
@@ -213,6 +220,7 @@ func (cc *Controller) StartSync(client clientset.Interface, eventClient v1core.E
 		},
 		)
 	}
+	// 启动assignedSource informer
 	remoteConfigSourceInformerFunc := utilpanic.HandlePanic(func() {
 		if cc.remoteConfigSourceInformer != nil {
 			klog.InfoS("Kubelet config controller starting remote config source informer")
@@ -220,8 +228,10 @@ func (cc *Controller) StartSync(client clientset.Interface, eventClient v1core.E
 		}
 	})
 	// node informer
+	// 监听node变化
 	cc.nodeInformer = newSharedNodeInformer(client, nodeName,
 		cc.onAddNodeEvent, cc.onUpdateNodeEvent, cc.onDeleteNodeEvent)
+	// 启动node informer
 	nodeInformerFunc := utilpanic.HandlePanic(func() {
 		klog.InfoS("Kubelet config controller starting Node informer")
 		cc.nodeInformer.Run(wait.NeverStop)
@@ -243,6 +253,7 @@ func (cc *Controller) StartSync(client clientset.Interface, eventClient v1core.E
 
 // loadConfig loads Kubelet config from a checkpoint
 // It returns the loaded configuration or a clean failure reason (for status reporting) and an error.
+// 从checkpoint中加载KubeletConfiguration
 func (cc *Controller) loadConfig(source checkpoint.RemoteConfigSource) (*kubeletconfig.KubeletConfiguration, string, error) {
 	// load KubeletConfiguration from checkpoint
 	kc, err := cc.checkpointStore.Load(source)
@@ -263,6 +274,7 @@ func (cc *Controller) loadConfig(source checkpoint.RemoteConfigSource) (*kubelet
 }
 
 // initializeDynamicConfigDir makes sure that the storage layers for various controller components are set up correctly
+// 对store进行初始化
 func (cc *Controller) initializeDynamicConfigDir() error {
 	klog.InfoS("Kubelet config controller ensuring filesystem is set up correctly")
 	// initializeDynamicConfigDir local checkpoint storage location
@@ -270,18 +282,20 @@ func (cc *Controller) initializeDynamicConfigDir() error {
 }
 
 // checkTrial checks whether the trial duration has passed, and updates the last-known-good config if necessary
+// 每次过duration时间，更新AssignedToLastKnownGood为assigned
 func (cc *Controller) checkTrial(duration time.Duration) {
 	// when the trial period is over, the assigned config becomes the last-known-good
 	if trial, err := cc.inTrial(duration); err != nil {
 		klog.ErrorS(err, "Kubelet config controller failed to check trial period for assigned config")
-	} else if !trial {
-		if err := cc.graduateAssignedToLastKnownGood(); err != nil {
+	} else if !trial { // AssignedModified到现在的间隔超过了duration
+		if err := cc.graduateAssignedToLastKnownGood(); err != nil { // 设置LastKnownGood的值为Assigned
 			klog.ErrorS(err, "failed to set last-known-good to assigned config")
 		}
 	}
 }
 
 // inTrial returns true if the time elapsed since the last modification of the assigned config does not exceed `trialDur`, false otherwise
+// AssignedModified时间距离现在是否超过trialDur
 func (cc *Controller) inTrial(trialDur time.Duration) (bool, error) {
 	now := time.Now()
 	t, err := cc.checkpointStore.AssignedModified()
@@ -296,6 +310,7 @@ func (cc *Controller) inTrial(trialDur time.Duration) (bool, error) {
 
 // graduateAssignedToLastKnownGood sets the last-known-good in the checkpointStore
 // to the same value as the assigned config maintained by the checkpointStore
+// 设置LastKnownGood的值为Assigned
 func (cc *Controller) graduateAssignedToLastKnownGood() error {
 	// get assigned
 	assigned, err := cc.checkpointStore.Assigned()

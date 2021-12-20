@@ -38,6 +38,10 @@ const (
 )
 
 // fsStore is for tracking checkpoints in the local filesystem, implements Store
+/*
+   checkpoints/uid/resourceVersion/files-from-configmap 保存payload和 KubeletConfiguration
+   meta下面保存了assignedFile和lastKnownGoodFile，用来存储RemoteConfigSource
+*/
 type fsStore struct {
 	// fs is the filesystem to use for storage operations; can be mocked for testing
 	fs utilfs.Filesystem
@@ -54,7 +58,7 @@ func NewFsStore(fs utilfs.Filesystem, dir string) Store {
 		dir: dir,
 	}
 }
-
+// 创建必要的文件和目录
 func (s *fsStore) Initialize() error {
 	klog.InfoS("Kubelet config controller initializing config checkpoints directory", "path", s.dir)
 	// ensure top-level dir for store
@@ -74,7 +78,7 @@ func (s *fsStore) Initialize() error {
 	// ensure checkpoints directory (saves unpacked payloads in subdirectories named after payload UID)
 	return utilfiles.EnsureDir(s.fs, filepath.Join(s.dir, checkpointsDir))
 }
-
+// 确保checkpoint文件路径存在
 func (s *fsStore) Exists(source checkpoint.RemoteConfigSource) (bool, error) {
 	const errfmt = "failed to determine whether checkpoint exists for source %s, UID: %s, ResourceVersion: %s exists, error: %v"
 	if len(source.UID()) == 0 {
@@ -91,7 +95,7 @@ func (s *fsStore) Exists(source checkpoint.RemoteConfigSource) (bool, error) {
 	}
 	return ok, nil
 }
-
+// 用payload.Files填充checkpoint文件夹
 func (s *fsStore) Save(payload checkpoint.Payload) error {
 	// Note: Payload interface guarantees UID() and ResourceVersion() to be non-empty
 	path := s.checkpointPath(payload.UID(), payload.ResourceVersion())
@@ -103,7 +107,7 @@ func (s *fsStore) Save(payload checkpoint.Payload) error {
 	// save the checkpoint's files in the appropriate checkpoint dir
 	return utilfiles.ReplaceDir(s.fs, path, payload.Files())
 }
-
+// 从checkpoint中加载KubeletConfiguration
 func (s *fsStore) Load(source checkpoint.RemoteConfigSource) (*kubeletconfig.KubeletConfiguration, error) {
 	sourceFmt := fmt.Sprintf("%s, UID: %s, ResourceVersion: %s", source.APIPath(), source.UID(), source.ResourceVersion())
 	// check if a checkpoint exists for the source
@@ -124,7 +128,7 @@ func (s *fsStore) Load(source checkpoint.RemoteConfigSource) (*kubeletconfig.Kub
 	}
 	return kc, nil
 }
-
+// assigned文件最后一次修改时间
 func (s *fsStore) AssignedModified() (time.Time, error) {
 	path := s.metaPath(assignedFile)
 	info, err := s.fs.Stat(path)
@@ -133,27 +137,27 @@ func (s *fsStore) AssignedModified() (time.Time, error) {
 	}
 	return info.ModTime(), nil
 }
-
+// 从assignedFile 反序列化出来RemoteConfigSource
 func (s *fsStore) Assigned() (checkpoint.RemoteConfigSource, error) {
 	return readRemoteConfigSource(s.fs, s.metaPath(assignedFile))
 }
-
+// 从lastKnownGoodFile中反序列化出来RemoteConfigSource
 func (s *fsStore) LastKnownGood() (checkpoint.RemoteConfigSource, error) {
 	return readRemoteConfigSource(s.fs, s.metaPath(lastKnownGoodFile))
 }
-
+// RemoteConfigSource序列化到assignedFile文件
 func (s *fsStore) SetAssigned(source checkpoint.RemoteConfigSource) error {
 	return writeRemoteConfigSource(s.fs, s.metaPath(assignedFile), source)
 }
-
+// RemoteConfigSource序列化到lastKnownGoodFile文件
 func (s *fsStore) SetLastKnownGood(source checkpoint.RemoteConfigSource) error {
 	return writeRemoteConfigSource(s.fs, s.metaPath(lastKnownGoodFile), source)
 }
-
+// 晴空assigned文件和LastKnownGood文件
 func (s *fsStore) Reset() (bool, error) {
 	return reset(s)
 }
-
+// checkpoint文件夹路径
 func (s *fsStore) checkpointPath(uid, resourceVersion string) string {
 	return filepath.Join(s.dir, checkpointsDir, uid, resourceVersion)
 }
@@ -161,7 +165,7 @@ func (s *fsStore) checkpointPath(uid, resourceVersion string) string {
 func (s *fsStore) metaPath(name string) string {
 	return filepath.Join(s.dir, metaDir, name)
 }
-
+// 从path中反序列化出来RemoteConfigSource
 func readRemoteConfigSource(fs utilfs.Filesystem, path string) (checkpoint.RemoteConfigSource, error) {
 	data, err := fs.ReadFile(path)
 	if err != nil {
@@ -171,7 +175,7 @@ func readRemoteConfigSource(fs utilfs.Filesystem, path string) (checkpoint.Remot
 	}
 	return checkpoint.DecodeRemoteConfigSource(data)
 }
-
+// RemoteConfigSource序列化到path中
 func writeRemoteConfigSource(fs utilfs.Filesystem, path string, source checkpoint.RemoteConfigSource) error {
 	// if nil, reset the file
 	if source == nil {

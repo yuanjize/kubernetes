@@ -82,6 +82,7 @@ func (bus *DBusCon) CurrentInhibitDelay() (time.Duration, error) {
 
 // InhibitShutdown creates an systemd inhibitor by calling logind's Inhibt() and returns the inhibitor lock
 // see https://www.freedesktop.org/wiki/Software/systemd/inhibit/ for more details.
+// 看这个文章http://manpages.ubuntu.com/manpages/impish/zh_CN/man1/systemd-inhibit.1.html，就是拿到一个延迟 休眠/关机的锁
 func (bus *DBusCon) InhibitShutdown() (InhibitLock, error) {
 	obj := bus.SystemBus.Object(logindService, logindObject)
 	what := "shutdown"
@@ -104,6 +105,7 @@ func (bus *DBusCon) InhibitShutdown() (InhibitLock, error) {
 }
 
 // ReleaseInhibitLock will release the underlying inhibit lock which will cause the shutdown to start.
+// 释放关机锁
 func (bus *DBusCon) ReleaseInhibitLock(lock InhibitLock) error {
 	err := syscall.Close(int(lock))
 
@@ -115,6 +117,7 @@ func (bus *DBusCon) ReleaseInhibitLock(lock InhibitLock) error {
 }
 
 // ReloadLogindConf uses dbus to send a SIGHUP to the systemd-logind service causing logind to reload it's configuration.
+// 发送SIGHUP信号，让systemd-logind重新加载配置
 func (bus *DBusCon) ReloadLogindConf() error {
 	systemdService := "org.freedesktop.systemd1"
 	systemdObject := "/org/freedesktop/systemd1"
@@ -135,6 +138,7 @@ func (bus *DBusCon) ReloadLogindConf() error {
 
 // MonitorShutdown detects the a node shutdown by watching for "PrepareForShutdown" logind events.
 // see https://www.freedesktop.org/wiki/Software/systemd/inhibit/ for more details.
+// 注册对PrepareForShutdown信号的监听，发生PrepareForShutdown信号的时候写到返回值
 func (bus *DBusCon) MonitorShutdown() (<-chan bool, error) {
 	err := bus.SystemBus.AddMatchSignal(dbus.WithMatchInterface(logindInterface), dbus.WithMatchMember("PrepareForShutdown"), dbus.WithMatchObjectPath("/org/freedesktop/login1"))
 
@@ -176,6 +180,7 @@ const (
 )
 
 // OverrideInhibitDelay writes a config file to logind overriding InhibitDelayMaxSec to the value desired.
+// 覆盖配置文件中的inhibitDelayMax值（重新生成配置文件）
 func (bus *DBusCon) OverrideInhibitDelay(inhibitDelayMax time.Duration) error {
 	err := os.MkdirAll(logindConfigDirectory, 0755)
 	if err != nil {
